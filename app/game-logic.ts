@@ -35,6 +35,13 @@ export type ResolveResult = {
   points: number;
   chains: number;
   firstClearCells: ClearedCell[];
+  steps: ResolutionStep[];
+};
+
+export type ResolutionStep = {
+  clearCells: ClearedCell[];
+  boardAfterClear: GroundBoard;
+  boardAfterGravity: GroundBoard;
 };
 
 export type GrowthTarget = {
@@ -45,6 +52,14 @@ export type GrowthTarget = {
 };
 
 export type GrowthEffect = GrowthTarget & { id: number };
+
+export type PendingResolution = {
+  id: number;
+  steps: ResolutionStep[];
+  stepIndex: number;
+  phase: "clear" | "gravity";
+  growthTarget: GrowthTarget | null;
+};
 
 export type GameState = {
   groundBoard: GroundBoard;
@@ -57,6 +72,8 @@ export type GameState = {
   growthEffect: GrowthEffect | null;
   growthSequence: number;
   pendingGameOver: boolean;
+  pendingResolution: PendingResolution | null;
+  resolutionSequence: number;
 };
 
 export type GameAction =
@@ -64,6 +81,7 @@ export type GameAction =
   | { type: "MOVE"; dx: -1 | 1 }
   | { type: "ROTATE" }
   | { type: "HARD_DROP" }
+  | { type: "ADVANCE_RESOLUTION"; id: number }
   | { type: "FINISH_GROWTH"; id: number }
   | { type: "RESET" };
 
@@ -208,6 +226,7 @@ function resolveFromFirstClear(
   let points = 0;
   let chains = 0;
   let firstClearCells: ClearedCell[] = [];
+  const steps: ResolutionStep[] = [];
   let clear = initialClear;
 
   while (clear.length > 0) {
@@ -217,12 +236,18 @@ function resolveFromFirstClear(
     clear.forEach(({ x, y }) => {
       current[y][x] = null;
     });
+    const boardAfterClear = current.map((row) => [...row]);
     const gravity = applyGravity(current);
     current = gravity.board;
+    steps.push({
+      clearCells: clear,
+      boardAfterClear,
+      boardAfterGravity: current.map((row) => [...row]),
+    });
     clear = findTriggeredClearCells(current, gravity.movedCells);
   }
 
-  return { board: current, points, chains, firstClearCells };
+  return { board: current, points, chains, firstClearCells, steps };
 }
 
 export function resolveBoard(board: GroundBoard): ResolveResult {
@@ -328,13 +353,46 @@ export function createInitialState(random = Math.random): GameState {
     growthEffect: null,
     growthSequence: 0,
     pendingGameOver: false,
+    pendingResolution: null,
+    resolutionSequence: 0,
+  };
+}
+
+function finishTurn(
+  state: GameState,
+  board: GroundBoard,
+  growthTarget: GrowthTarget | null,
+): GameState {
+  const undergroundBoard = growthTarget
+    ? addPeanut(state.undergroundBoard, growthTarget)
+    : state.undergroundBoard;
+  const nextActive = spawnPair(state.nextPair);
+  const canSpawn = canPlace(board, nextActive);
+  const growthSequence = growthTarget
+    ? state.growthSequence + 1
+    : state.growthSequence;
+
+  return {
+    ...state,
+    groundBoard: board,
+    undergroundBoard,
+    activePair: canSpawn ? nextActive : null,
+    nextPair: randomPair(),
+    gameStatus: growthTarget || canSpawn ? "playing" : "gameover",
+    growthEffect: growthTarget
+      ? { ...growthTarget, id: growthSequence }
+      : null,
+    growthSequence,
+    pendingGameOver: Boolean(growthTarget && !canSpawn),
+    pendingResolution: null,
   };
 }
 
 function settlePair(state: GameState, pair: ActivePair): GameState {
   const landedCells = getPairCells(pair);
+  const lockedBoard = lockPair(state.groundBoard, pair);
   const resolved = resolveAfterLanding(
-    lockPair(state.groundBoard, pair),
+    lockedBoard,
     landedCells,
   );
   const growthTarget = selectGrowthTarget(
@@ -342,30 +400,28 @@ function settlePair(state: GameState, pair: ActivePair): GameState {
     resolved.firstClearCells,
     state.undergroundBoard,
   );
-  const undergroundBoard = growthTarget
-    ? addPeanut(state.undergroundBoard, growthTarget)
-    : state.undergroundBoard;
+  if (resolved.steps.length === 0) {
+    return finishTurn(
+      { ...state, chainCount: 0 },
+      lockedBoard,
+      null,
+    );
+  }
 
-  const nextActive = spawnPair(state.nextPair);
-  const canSpawn = canPlace(resolved.board, nextActive);
-  const growthSequence = growthTarget
-    ? state.growthSequence + 1
-    : state.growthSequence;
-
+  const resolutionSequence = state.resolutionSequence + 1;
   return {
     ...state,
-    groundBoard: resolved.board,
-    undergroundBoard,
-    activePair: canSpawn ? nextActive : null,
-    nextPair: randomPair(),
-    score: state.score + resolved.points,
-    chainCount: resolved.chains,
-    gameStatus: growthTarget || canSpawn ? "playing" : "gameover",
-    growthEffect: growthTarget
-      ? { ...growthTarget, id: growthSequence }
-      : null,
-    growthSequence,
-    pendingGameOver: Boolean(growthTarget && !canSpawn),
+    groundBoard: lockedBoard,
+    activePair: null,
+    chainCount: 0,
+    pendingResolution: {
+      id: resolutionSequence,
+      steps: resolved.steps,
+      stepIndex: 0,
+      phase: "clear",
+      growthTarget,
+    },
+    resolutionSequence,
   };
 }
 
@@ -382,10 +438,43 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     };
   }
 
+  if (action.type === "ADVANCE_RESOLUTION") {
+    const pending = state.pendingResolution;
+    if (!pending || pending.id !== action.id) return state;
+    const step = pending.steps[pending.stepIndex];
+
+    if (pending.phase === "clear") {
+      const chain = pending.stepIndex + 1;
+      return {
+        ...state,
+        groundBoard: step.boardAfterClear,
+        score: state.score + step.clearCells.length * 100 * chain,
+        chainCount: chain,
+        pendingResolution: { ...pending, phase: "gravity" },
+      };
+    }
+
+    const nextIndex = pending.stepIndex + 1;
+    if (nextIndex < pending.steps.length) {
+      return {
+        ...state,
+        groundBoard: step.boardAfterGravity,
+        pendingResolution: {
+          ...pending,
+          stepIndex: nextIndex,
+          phase: "clear",
+        },
+      };
+    }
+
+    return finishTurn(state, step.boardAfterGravity, pending.growthTarget);
+  }
+
   if (
     state.gameStatus !== "playing" ||
     !state.activePair ||
-    state.growthEffect
+    state.growthEffect ||
+    state.pendingResolution
   ) {
     return state;
   }

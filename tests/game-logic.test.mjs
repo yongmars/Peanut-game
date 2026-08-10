@@ -20,6 +20,17 @@ function peanutCount(board) {
   return board.flat().filter(Boolean).length;
 }
 
+function finishResolution(state) {
+  let current = state;
+  while (current.pendingResolution) {
+    current = gameReducer(current, {
+      type: "ADVANCE_RESOLUTION",
+      id: current.pendingResolution.id,
+    });
+  }
+  return current;
+}
+
 test("a group of four clears and scores 400 points", () => {
   const board = createGroundBoard();
   board[11][0] = "yellow";
@@ -130,13 +141,13 @@ test("the pivot flower creates one peanut in its own column", () => {
   groundBoard[11][1] = "yellow";
   groundBoard[11][2] = "yellow";
 
-  const result = gameReducer(
+  const result = finishResolution(gameReducer(
     makeState({
       groundBoard,
       activePair: { colors: ["yellow", "pink"], x: 3, y: 11, rotation: 1 },
     }),
     { type: "HARD_DROP" },
-  );
+  ));
 
   assert.equal(peanutCount(result.undergroundBoard), 1);
   assert.deepEqual(result.undergroundBoard[5][3], { type: "standard" });
@@ -150,13 +161,13 @@ test("the partner flower supplies the column when only it clears", () => {
   groundBoard[11][1] = "yellow";
   groundBoard[11][2] = "yellow";
 
-  const result = gameReducer(
+  const result = finishResolution(gameReducer(
     makeState({
       groundBoard,
       activePair: { colors: ["pink", "yellow"], x: 4, y: 11, rotation: 3 },
     }),
     { type: "HARD_DROP" },
-  );
+  ));
 
   assert.equal(peanutCount(result.undergroundBoard), 1);
   assert.deepEqual(result.undergroundBoard[5][3], { type: "standard" });
@@ -170,13 +181,13 @@ test("the pivot column wins when both dropped flowers clear", () => {
     groundBoard[y][3] = "pink";
   }
 
-  const result = gameReducer(
+  const result = finishResolution(gameReducer(
     makeState({
       groundBoard,
       activePair: { colors: ["yellow", "pink"], x: 2, y: 11, rotation: 1 },
     }),
     { type: "HARD_DROP" },
-  );
+  ));
 
   assert.equal(result.chainCount, 1);
   assert.equal(result.score, 800);
@@ -191,7 +202,28 @@ test("a second chain still creates only one peanut", () => {
   groundBoard[11][2] = "pink";
   groundBoard[11][3] = "pink";
 
-  const result = gameReducer(
+  const result = finishResolution(gameReducer(
+    makeState({
+      groundBoard,
+      activePair: { colors: ["yellow", "pink"], x: 0, y: 8, rotation: 0 },
+    }),
+    { type: "HARD_DROP" },
+  ));
+
+  assert.equal(result.chainCount, 2);
+  assert.equal(result.score, 1200);
+  assert.equal(peanutCount(result.undergroundBoard), 1);
+  assert.deepEqual(result.undergroundBoard[5][0], { type: "standard" });
+});
+
+test("the reducer displays clear and gravity as separate chain stages", () => {
+  const groundBoard = createGroundBoard();
+  for (let y = 9; y < 12; y += 1) groundBoard[y][0] = "yellow";
+  groundBoard[11][1] = "pink";
+  groundBoard[11][2] = "pink";
+  groundBoard[11][3] = "pink";
+
+  let state = gameReducer(
     makeState({
       groundBoard,
       activePair: { colors: ["yellow", "pink"], x: 0, y: 8, rotation: 0 },
@@ -199,10 +231,33 @@ test("a second chain still creates only one peanut", () => {
     { type: "HARD_DROP" },
   );
 
-  assert.equal(result.chainCount, 2);
-  assert.equal(result.score, 1200);
-  assert.equal(peanutCount(result.undergroundBoard), 1);
-  assert.deepEqual(result.undergroundBoard[5][0], { type: "standard" });
+  assert.equal(state.pendingResolution?.phase, "clear");
+  assert.equal(state.groundBoard.flat().filter((cell) => cell === "yellow").length, 4);
+
+  state = gameReducer(state, {
+    type: "ADVANCE_RESOLUTION",
+    id: state.pendingResolution.id,
+  });
+  assert.equal(state.chainCount, 1);
+  assert.equal(state.pendingResolution?.phase, "gravity");
+  assert.equal(state.groundBoard[7][0], "pink");
+  assert.equal(state.groundBoard[11][0], null);
+
+  state = gameReducer(state, {
+    type: "ADVANCE_RESOLUTION",
+    id: state.pendingResolution.id,
+  });
+  assert.equal(state.pendingResolution?.stepIndex, 1);
+  assert.equal(state.pendingResolution?.phase, "clear");
+  assert.equal(state.groundBoard[11][0], "pink");
+
+  state = gameReducer(state, {
+    type: "ADVANCE_RESOLUTION",
+    id: state.pendingResolution.id,
+  });
+  assert.equal(state.chainCount, 2);
+  assert.equal(state.score, 1200);
+  assert.equal(state.groundBoard.flat().filter(Boolean).length, 0);
 });
 
 test("peanuts stack from the bottom and a full column produces none", () => {
@@ -215,20 +270,20 @@ test("peanuts stack from the bottom and a full column produces none", () => {
   undergroundBoard[5][3] = { type: "standard" };
   undergroundBoard[4][3] = { type: "standard" };
 
-  const stacked = gameReducer(
+  const stacked = finishResolution(gameReducer(
     makeState({ groundBoard, undergroundBoard, activePair: pair }),
     { type: "HARD_DROP" },
-  );
+  ));
   assert.deepEqual(stacked.undergroundBoard[3][3], { type: "standard" });
 
   const fullUnderground = createUndergroundBoard();
   for (let row = 0; row < 6; row += 1) {
     fullUnderground[row][3] = { type: "standard" };
   }
-  const full = gameReducer(
+  const full = finishResolution(gameReducer(
     makeState({ groundBoard, undergroundBoard: fullUnderground, activePair: pair }),
     { type: "HARD_DROP" },
-  );
+  ));
   assert.equal(peanutCount(full.undergroundBoard), 6);
   assert.equal(full.growthEffect, null);
   assert.equal(full.gameStatus, "playing");
@@ -258,13 +313,13 @@ test("growth pauses input until its matching animation finishes", () => {
   groundBoard[11][0] = "yellow";
   groundBoard[11][1] = "yellow";
   groundBoard[11][2] = "yellow";
-  const grown = gameReducer(
+  const grown = finishResolution(gameReducer(
     makeState({
       groundBoard,
       activePair: { colors: ["yellow", "pink"], x: 3, y: 11, rotation: 1 },
     }),
     { type: "HARD_DROP" },
-  );
+  ));
 
   const frozen = gameReducer(grown, { type: "MOVE", dx: -1 });
   assert.equal(frozen.activePair?.x, grown.activePair?.x);

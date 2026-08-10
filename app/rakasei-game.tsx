@@ -96,6 +96,16 @@ export function RakaseiGame() {
   }, [state.growthEffect]);
 
   useEffect(() => {
+    if (!state.pendingResolution) return;
+    const { id, phase } = state.pendingResolution;
+    const timer = window.setTimeout(
+      () => dispatch({ type: "ADVANCE_RESOLUTION", id }),
+      phase === "clear" ? 450 : 320,
+    );
+    return () => window.clearTimeout(timer);
+  }, [state.pendingResolution]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const controls: Record<string, () => void> = {
         ArrowLeft: () => dispatch({ type: "MOVE", dx: -1 }),
@@ -128,7 +138,9 @@ export function RakaseiGame() {
 
   const growthPreview = useMemo(
     () =>
-      state.gameStatus === "playing" && !state.growthEffect
+      state.gameStatus === "playing" &&
+      !state.growthEffect &&
+      !state.pendingResolution
         ? predictGrowthTarget(
             state.groundBoard,
             state.undergroundBoard,
@@ -140,6 +152,7 @@ export function RakaseiGame() {
       state.gameStatus,
       state.groundBoard,
       state.growthEffect,
+      state.pendingResolution,
       state.undergroundBoard,
     ],
   );
