@@ -4,10 +4,15 @@ export const COLS = 6;
 
 export const FLOWER_COLORS = ["yellow", "pink", "purple"] as const;
 export type FlowerColor = (typeof FLOWER_COLORS)[number];
-export type Cell = FlowerColor | null;
-export type Board = Cell[][];
-export type GameStatus = "playing" | "gameover";
+export type GroundCell = FlowerColor | null;
+export type GroundBoard = GroundCell[][];
 
+export type PeanutType = "standard";
+export type Peanut = { type: PeanutType };
+export type UndergroundCell = Peanut | null;
+export type UndergroundBoard = UndergroundCell[][];
+
+export type GameStatus = "playing" | "gameover";
 export type Pair = readonly [FlowerColor, FlowerColor];
 
 export type ActivePair = {
@@ -17,14 +22,41 @@ export type ActivePair = {
   rotation: 0 | 1 | 2 | 3;
 };
 
+export type PairCell = {
+  x: number;
+  y: number;
+  color: FlowerColor;
+};
+
+export type ClearedCell = PairCell;
+
+export type ResolveResult = {
+  board: GroundBoard;
+  points: number;
+  chains: number;
+  firstClearCells: ClearedCell[];
+};
+
+export type GrowthTarget = {
+  column: number;
+  row: number;
+  sourceX: number;
+  sourceY: number;
+};
+
+export type GrowthEffect = GrowthTarget & { id: number };
+
 export type GameState = {
-  groundBoard: Board;
-  undergroundBoard: Board;
+  groundBoard: GroundBoard;
+  undergroundBoard: UndergroundBoard;
   activePair: ActivePair | null;
   nextPair: Pair;
   score: number;
   chainCount: number;
   gameStatus: GameStatus;
+  growthEffect: GrowthEffect | null;
+  growthSequence: number;
+  pendingGameOver: boolean;
 };
 
 export type GameAction =
@@ -32,6 +64,7 @@ export type GameAction =
   | { type: "MOVE"; dx: -1 | 1 }
   | { type: "ROTATE" }
   | { type: "HARD_DROP" }
+  | { type: "FINISH_GROWTH"; id: number }
   | { type: "RESET" };
 
 const OFFSETS = [
@@ -41,8 +74,16 @@ const OFFSETS = [
   { x: -1, y: 0 },
 ] as const;
 
-export function createBoard(rows: number): Board {
-  return Array.from({ length: rows }, () => Array<Cell>(COLS).fill(null));
+export function createGroundBoard(): GroundBoard {
+  return Array.from({ length: GROUND_ROWS }, () =>
+    Array<GroundCell>(COLS).fill(null),
+  );
+}
+
+export function createUndergroundBoard(): UndergroundBoard {
+  return Array.from({ length: UNDERGROUND_ROWS }, () =>
+    Array<UndergroundCell>(COLS).fill(null),
+  );
 }
 
 export function randomPair(random = Math.random): Pair {
@@ -55,7 +96,7 @@ export function spawnPair(colors: Pair): ActivePair {
   return { colors, x: 2, y: 1, rotation: 0 };
 }
 
-export function getPairCells(pair: ActivePair) {
+export function getPairCells(pair: ActivePair): PairCell[] {
   const offset = OFFSETS[pair.rotation];
   return [
     { x: pair.x, y: pair.y, color: pair.colors[0] },
@@ -63,7 +104,7 @@ export function getPairCells(pair: ActivePair) {
   ];
 }
 
-export function canPlace(board: Board, pair: ActivePair): boolean {
+export function canPlace(board: GroundBoard, pair: ActivePair): boolean {
   return getPairCells(pair).every(
     ({ x, y }) =>
       x >= 0 &&
@@ -74,8 +115,8 @@ export function canPlace(board: Board, pair: ActivePair): boolean {
   );
 }
 
-function findClearCells(board: Board): Set<string> {
-  const clear = new Set<string>();
+function findClearCells(board: GroundBoard): ClearedCell[] {
+  const clear = new Map<string, ClearedCell>();
   const visited = new Set<string>();
   const directions = [
     [1, 0],
@@ -90,13 +131,13 @@ function findClearCells(board: Board): Set<string> {
       const startKey = `${x},${y}`;
       if (!color || visited.has(startKey)) continue;
 
-      const group: Array<[number, number]> = [];
+      const group: ClearedCell[] = [];
       const queue: Array<[number, number]> = [[x, y]];
       visited.add(startKey);
 
       while (queue.length) {
         const [cx, cy] = queue.shift()!;
-        group.push([cx, cy]);
+        group.push({ x: cx, y: cy, color });
         for (const [dx, dy] of directions) {
           const nx = cx + dx;
           const ny = cy + dy;
@@ -116,16 +157,16 @@ function findClearCells(board: Board): Set<string> {
       }
 
       if (group.length >= 4) {
-        group.forEach(([gx, gy]) => clear.add(`${gx},${gy}`));
+        group.forEach((cell) => clear.set(`${cell.x},${cell.y}`, cell));
       }
     }
   }
 
-  return clear;
+  return [...clear.values()];
 }
 
-function applyGravity(board: Board): Board {
-  const result = createBoard(GROUND_ROWS);
+function applyGravity(board: GroundBoard): GroundBoard {
+  const result = createGroundBoard();
   for (let x = 0; x < COLS; x += 1) {
     const flowers: FlowerColor[] = [];
     for (let y = GROUND_ROWS - 1; y >= 0; y -= 1) {
@@ -139,68 +180,171 @@ function applyGravity(board: Board): Board {
   return result;
 }
 
-export function resolveBoard(board: Board): {
-  board: Board;
-  points: number;
-  chains: number;
-} {
+export function resolveBoard(board: GroundBoard): ResolveResult {
   let current = board.map((row) => [...row]);
   let points = 0;
   let chains = 0;
+  let firstClearCells: ClearedCell[] = [];
 
   while (true) {
     const clear = findClearCells(current);
-    if (clear.size === 0) break;
+    if (clear.length === 0) break;
     chains += 1;
-    points += clear.size * 100 * chains;
-    clear.forEach((key) => {
-      const [x, y] = key.split(",").map(Number);
+    if (chains === 1) firstClearCells = clear;
+    points += clear.length * 100 * chains;
+    clear.forEach(({ x, y }) => {
       current[y][x] = null;
     });
     current = applyGravity(current);
   }
 
-  return { board: current, points, chains };
+  return { board: current, points, chains, firstClearCells };
+}
+
+export function hardDropPair(board: GroundBoard, pair: ActivePair): ActivePair {
+  let dropped = pair;
+  while (canPlace(board, { ...dropped, y: dropped.y + 1 })) {
+    dropped = { ...dropped, y: dropped.y + 1 };
+  }
+  return dropped;
+}
+
+function lockPair(board: GroundBoard, pair: ActivePair): GroundBoard {
+  const locked = board.map((row) => [...row]);
+  getPairCells(pair).forEach(({ x, y, color }) => {
+    locked[y][x] = color;
+  });
+  return locked;
+}
+
+export function findUndergroundSlot(
+  board: UndergroundBoard,
+  column: number,
+): number | null {
+  for (let row = UNDERGROUND_ROWS - 1; row >= 0; row -= 1) {
+    if (board[row][column] === null) return row;
+  }
+  return null;
+}
+
+export function selectGrowthTarget(
+  landedCells: PairCell[],
+  firstClearCells: ClearedCell[],
+  undergroundBoard: UndergroundBoard,
+): GrowthTarget | null {
+  const clearedKeys = new Set(
+    firstClearCells.map(({ x, y }) => `${x},${y}`),
+  );
+  // getPairCells() always returns the rotation-center flower first.
+  const source = landedCells.find(({ x, y }) => clearedKeys.has(`${x},${y}`));
+  if (!source) return null;
+
+  const row = findUndergroundSlot(undergroundBoard, source.x);
+  if (row === null) return null;
+  return {
+    column: source.x,
+    row,
+    sourceX: source.x,
+    sourceY: source.y,
+  };
+}
+
+export function addPeanut(
+  board: UndergroundBoard,
+  target: GrowthTarget,
+): UndergroundBoard {
+  const result = board.map((row) => [...row]);
+  result[target.row][target.column] = { type: "standard" };
+  return result;
+}
+
+export function predictGrowthTarget(
+  groundBoard: GroundBoard,
+  undergroundBoard: UndergroundBoard,
+  activePair: ActivePair | null,
+): GrowthTarget | null {
+  if (!activePair) return null;
+  const dropped = hardDropPair(groundBoard, activePair);
+  const landedCells = getPairCells(dropped);
+  const resolved = resolveBoard(lockPair(groundBoard, dropped));
+  return selectGrowthTarget(
+    landedCells,
+    resolved.firstClearCells,
+    undergroundBoard,
+  );
 }
 
 export function createInitialState(random = Math.random): GameState {
   const first = randomPair(random);
-  const activePair = spawnPair(first);
   return {
-    groundBoard: createBoard(GROUND_ROWS),
-    undergroundBoard: createBoard(UNDERGROUND_ROWS),
-    activePair,
+    groundBoard: createGroundBoard(),
+    undergroundBoard: createUndergroundBoard(),
+    activePair: spawnPair(first),
     nextPair: randomPair(random),
     score: 0,
     chainCount: 0,
     gameStatus: "playing",
+    growthEffect: null,
+    growthSequence: 0,
+    pendingGameOver: false,
   };
 }
 
 function settlePair(state: GameState, pair: ActivePair): GameState {
-  const locked = state.groundBoard.map((row) => [...row]);
-  getPairCells(pair).forEach(({ x, y, color }) => {
-    locked[y][x] = color;
-  });
+  const landedCells = getPairCells(pair);
+  const resolved = resolveBoard(lockPair(state.groundBoard, pair));
+  const growthTarget = selectGrowthTarget(
+    landedCells,
+    resolved.firstClearCells,
+    state.undergroundBoard,
+  );
+  const undergroundBoard = growthTarget
+    ? addPeanut(state.undergroundBoard, growthTarget)
+    : state.undergroundBoard;
 
-  const resolved = resolveBoard(locked);
   const nextActive = spawnPair(state.nextPair);
   const canSpawn = canPlace(resolved.board, nextActive);
+  const growthSequence = growthTarget
+    ? state.growthSequence + 1
+    : state.growthSequence;
 
   return {
     ...state,
     groundBoard: resolved.board,
+    undergroundBoard,
     activePair: canSpawn ? nextActive : null,
     nextPair: randomPair(),
     score: state.score + resolved.points,
     chainCount: resolved.chains,
-    gameStatus: canSpawn ? "playing" : "gameover",
+    gameStatus: growthTarget || canSpawn ? "playing" : "gameover",
+    growthEffect: growthTarget
+      ? { ...growthTarget, id: growthSequence }
+      : null,
+    growthSequence,
+    pendingGameOver: Boolean(growthTarget && !canSpawn),
   };
 }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   if (action.type === "RESET") return createInitialState();
-  if (state.gameStatus !== "playing" || !state.activePair) return state;
+
+  if (action.type === "FINISH_GROWTH") {
+    if (!state.growthEffect || state.growthEffect.id !== action.id) return state;
+    return {
+      ...state,
+      growthEffect: null,
+      pendingGameOver: false,
+      gameStatus: state.pendingGameOver ? "gameover" : "playing",
+    };
+  }
+
+  if (
+    state.gameStatus !== "playing" ||
+    !state.activePair ||
+    state.growthEffect
+  ) {
+    return state;
+  }
 
   const pair = state.activePair;
 
@@ -223,11 +367,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   }
 
   if (action.type === "HARD_DROP") {
-    let dropped = pair;
-    while (canPlace(state.groundBoard, { ...dropped, y: dropped.y + 1 })) {
-      dropped = { ...dropped, y: dropped.y + 1 };
-    }
-    return settlePair(state, dropped);
+    return settlePair(state, hardDropPair(state.groundBoard, pair));
   }
 
   const movedDown = { ...pair, y: pair.y + 1 };
