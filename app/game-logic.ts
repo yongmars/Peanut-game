@@ -115,8 +115,8 @@ export function canPlace(board: GroundBoard, pair: ActivePair): boolean {
   );
 }
 
-function findClearCells(board: GroundBoard): ClearedCell[] {
-  const clear = new Map<string, ClearedCell>();
+function findClearGroups(board: GroundBoard): ClearedCell[][] {
+  const groups: ClearedCell[][] = [];
   const visited = new Set<string>();
   const directions = [
     [1, 0],
@@ -157,48 +157,86 @@ function findClearCells(board: GroundBoard): ClearedCell[] {
       }
 
       if (group.length >= 4) {
-        group.forEach((cell) => clear.set(`${cell.x},${cell.y}`, cell));
+        groups.push(group);
       }
     }
   }
 
-  return [...clear.values()];
+  return groups;
 }
 
-function applyGravity(board: GroundBoard): GroundBoard {
+function findTriggeredClearCells(
+  board: GroundBoard,
+  triggerCells: Array<Pick<PairCell, "x" | "y">>,
+): ClearedCell[] {
+  const triggerKeys = new Set(triggerCells.map(({ x, y }) => `${x},${y}`));
+  return findClearGroups(board)
+    .filter((group) =>
+      group.some(({ x, y }) => triggerKeys.has(`${x},${y}`)),
+    )
+    .flat();
+}
+
+function applyGravity(board: GroundBoard): {
+  board: GroundBoard;
+  movedCells: Array<Pick<PairCell, "x" | "y">>;
+} {
   const result = createGroundBoard();
+  const movedCells: Array<Pick<PairCell, "x" | "y">> = [];
   for (let x = 0; x < COLS; x += 1) {
-    const flowers: FlowerColor[] = [];
+    const flowers: Array<{ color: FlowerColor; sourceY: number }> = [];
     for (let y = GROUND_ROWS - 1; y >= 0; y -= 1) {
       const cell = board[y][x];
-      if (cell) flowers.push(cell);
+      if (cell) flowers.push({ color: cell, sourceY: y });
     }
-    flowers.forEach((flower, index) => {
-      result[GROUND_ROWS - 1 - index][x] = flower;
+    flowers.forEach(({ color, sourceY }, index) => {
+      const destinationY = GROUND_ROWS - 1 - index;
+      result[destinationY][x] = color;
+      if (sourceY !== destinationY) {
+        movedCells.push({ x, y: destinationY });
+      }
     });
   }
-  return result;
+  return { board: result, movedCells };
 }
 
-export function resolveBoard(board: GroundBoard): ResolveResult {
+function resolveFromFirstClear(
+  board: GroundBoard,
+  initialClear: ClearedCell[],
+): ResolveResult {
   let current = board.map((row) => [...row]);
   let points = 0;
   let chains = 0;
   let firstClearCells: ClearedCell[] = [];
+  let clear = initialClear;
 
-  while (true) {
-    const clear = findClearCells(current);
-    if (clear.length === 0) break;
+  while (clear.length > 0) {
     chains += 1;
     if (chains === 1) firstClearCells = clear;
     points += clear.length * 100 * chains;
     clear.forEach(({ x, y }) => {
       current[y][x] = null;
     });
-    current = applyGravity(current);
+    const gravity = applyGravity(current);
+    current = gravity.board;
+    clear = findTriggeredClearCells(current, gravity.movedCells);
   }
 
   return { board: current, points, chains, firstClearCells };
+}
+
+export function resolveBoard(board: GroundBoard): ResolveResult {
+  return resolveFromFirstClear(board, findClearGroups(board).flat());
+}
+
+export function resolveAfterLanding(
+  board: GroundBoard,
+  landedCells: PairCell[],
+): ResolveResult {
+  return resolveFromFirstClear(
+    board,
+    findTriggeredClearCells(board, landedCells),
+  );
 }
 
 export function hardDropPair(board: GroundBoard, pair: ActivePair): ActivePair {
@@ -266,7 +304,10 @@ export function predictGrowthTarget(
   if (!activePair) return null;
   const dropped = hardDropPair(groundBoard, activePair);
   const landedCells = getPairCells(dropped);
-  const resolved = resolveBoard(lockPair(groundBoard, dropped));
+  const resolved = resolveAfterLanding(
+    lockPair(groundBoard, dropped),
+    landedCells,
+  );
   return selectGrowthTarget(
     landedCells,
     resolved.firstClearCells,
@@ -292,7 +333,10 @@ export function createInitialState(random = Math.random): GameState {
 
 function settlePair(state: GameState, pair: ActivePair): GameState {
   const landedCells = getPairCells(pair);
-  const resolved = resolveBoard(lockPair(state.groundBoard, pair));
+  const resolved = resolveAfterLanding(
+    lockPair(state.groundBoard, pair),
+    landedCells,
+  );
   const growthTarget = selectGrowthTarget(
     landedCells,
     resolved.firstClearCells,

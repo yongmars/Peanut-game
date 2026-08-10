@@ -7,6 +7,7 @@ import {
   createUndergroundBoard,
   gameReducer,
   predictGrowthTarget,
+  resolveAfterLanding,
   resolveBoard,
   spawnPair,
 } from "../app/game-logic.ts";
@@ -44,6 +45,60 @@ test("separate groups clear simultaneously", () => {
   assert.equal(result.chains, 1);
   assert.equal(result.points, 800);
   assert.equal(result.firstClearCells.length, 8);
+});
+
+test("the first chain clears only groups completed by the landed pair", () => {
+  const board = createGroundBoard();
+  board[11][0] = "yellow";
+  board[11][1] = "yellow";
+  board[11][2] = "yellow";
+  for (let y = 8; y < 12; y += 1) board[y][5] = "purple";
+
+  const landedCells = [{ x: 3, y: 11, color: "yellow" }];
+  board[11][3] = "yellow";
+  const result = resolveAfterLanding(board, landedCells);
+
+  assert.equal(result.chains, 1);
+  assert.equal(result.points, 400);
+  assert.equal(result.firstClearCells.length, 4);
+  assert.equal(result.board.flat().filter((cell) => cell === "purple").length, 4);
+});
+
+test("multiple groups completed by the same pair clear in one chain stage", () => {
+  const board = createGroundBoard();
+  for (let y = 8; y < 11; y += 1) {
+    board[y][2] = "yellow";
+    board[y][3] = "pink";
+  }
+  board[11][2] = "yellow";
+  board[11][3] = "pink";
+
+  const result = resolveAfterLanding(board, [
+    { x: 2, y: 11, color: "yellow" },
+    { x: 3, y: 11, color: "pink" },
+  ]);
+
+  assert.equal(result.chains, 1);
+  assert.equal(result.points, 800);
+  assert.equal(result.firstClearCells.length, 8);
+});
+
+test("only a group containing a flower moved by gravity becomes chain two", () => {
+  const board = createGroundBoard();
+  for (let y = 8; y < 12; y += 1) board[y][0] = "yellow";
+  board[7][0] = "pink";
+  board[11][1] = "pink";
+  board[11][2] = "pink";
+  board[11][3] = "pink";
+  for (let y = 8; y < 12; y += 1) board[y][5] = "purple";
+
+  const result = resolveAfterLanding(board, [
+    { x: 0, y: 8, color: "yellow" },
+  ]);
+
+  assert.equal(result.chains, 2);
+  assert.equal(result.points, 1200);
+  assert.equal(result.board.flat().filter((cell) => cell === "purple").length, 4);
 });
 
 test("gravity can create a second chain without changing Phase 1 scoring", () => {
