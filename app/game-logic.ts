@@ -3,7 +3,7 @@ export const UNDERGROUND_ROWS = 6;
 export const COLS = 6;
 export const HARVEST_SCORE_PER_PEANUT = 250;
 
-export const FLOWER_COLORS = ["yellow", "pink", "purple"] as const;
+export const FLOWER_COLORS = ["yellow", "pink", "blue", "purple"] as const;
 export type FlowerColor = (typeof FLOWER_COLORS)[number];
 export type GroundCell = FlowerColor | null;
 export type GroundBoard = GroundCell[][];

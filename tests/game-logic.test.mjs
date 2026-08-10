@@ -8,15 +8,25 @@ import {
   createUndergroundBoard,
   findHarvestGroups,
   findUndergroundSlots,
+  FLOWER_COLORS,
   gameReducer,
   getLandedPairCells,
   predictGrowthTarget,
+  randomPair,
   resolveUndergroundBoard,
   resolveAfterLanding,
   resolveBoard,
   spawnPair,
   HARVEST_SCORE_PER_PEANUT,
 } from "../app/game-logic.ts";
+
+test("all four flower colors are available to pair generation", () => {
+  assert.deepEqual(FLOWER_COLORS, ["yellow", "pink", "blue", "purple"]);
+  assert.deepEqual(
+    [0, 0.25, 0.5, 0.75].map((value) => randomPair(() => value)[0]),
+    FLOWER_COLORS,
+  );
+});
 
 function makeState(overrides = {}) {
   return { ...createInitialState(() => 0), ...overrides };

@@ -13,19 +13,23 @@ import {
   type GrowthTarget,
   type Peanut,
 } from "./game-logic";
+import { FLOWER_ASSETS, GAME_ASSETS, getPeanutAsset } from "./game-assets";
+
+const FLOWER_LABELS: Record<FlowerColor, string> = {
+  yellow: "黄色",
+  pink: "ピンク",
+  blue: "青",
+  purple: "紫",
+};
 
 function Flower({ color, small = false }: { color: FlowerColor; small?: boolean }) {
   return (
-    <span
+    <img
       className={`flower flower--${color}${small ? " flower--small" : ""}`}
-      aria-label={`${color === "yellow" ? "黄色" : color === "pink" ? "ピンク" : "紫"}の花`}
-      role="img"
-    >
-      {Array.from({ length: 5 }, (_, index) => (
-        <i className="flower__petal" key={index} />
-      ))}
-      <i className="flower__center" />
-    </span>
+      src={FLOWER_ASSETS[color]}
+      alt={`${FLOWER_LABELS[color]}の花`}
+      draggable={false}
+    />
   );
 }
 
@@ -46,24 +50,18 @@ function PeanutPiece({
 }) {
   const appearing = appearingIndex >= 0;
   return (
-    <span
+    <img
       className={`peanut peanut--${peanut.type}${preview ? " peanut--preview" : ""}${appearing ? " peanut--appearing" : ""}${harvesting ? " peanut--harvesting" : ""}`}
+      src={getPeanutAsset(harvesting)}
       style={
         appearing
           ? ({ "--peanut-index": appearingIndex } as CSSProperties)
           : undefined
       }
-      aria-label={preview ? "生成予定の落花生" : "落花生"}
-      role="img"
+      alt={preview ? "生成予定の落花生" : harvesting ? "収穫される笑顔の落花生" : "落花生"}
+      draggable={false}
       data-peanut={preview ? "preview" : "grown"}
-    >
-      <i className="peanut__lobe peanut__lobe--top" />
-      <i className="peanut__lobe peanut__lobe--bottom" />
-      <i className="peanut__seam" />
-      <i className="peanut__eye peanut__eye--left" />
-      <i className="peanut__eye peanut__eye--right" />
-      <i className="peanut__mouth" />
-    </span>
+    />
   );
 }
 
@@ -71,6 +69,10 @@ type GrowthStyle = CSSProperties & {
   "--growth-column": number;
   "--growth-source-row": number;
   "--growth-target-row": number;
+};
+
+type GameShellStyle = CSSProperties & {
+  "--field-background-image": string;
 };
 
 function getGrowthStyle(target: Pick<GrowthTarget, "column" | "sourceY" | "row">): GrowthStyle {
@@ -188,7 +190,12 @@ export function RakaseiGame() {
   );
 
   return (
-    <main className="game-shell">
+    <main
+      className="game-shell"
+      style={{
+        "--field-background-image": `url("${GAME_ASSETS.background}")`,
+      } as GameShellStyle}
+    >
       <header className="hud" aria-label="ゲーム情報">
         <section className="hud__score" aria-label={`スコア ${state.score}`}>
           <span className="hud__label">SCORE</span>
@@ -209,8 +216,6 @@ export function RakaseiGame() {
 
       <section className="field-wrap" aria-label="ゲームフィールド">
         <div className="field-sky" aria-label="地上 6列12段">
-          <div className="cloud cloud--one" />
-          <div className="cloud cloud--two" />
           <div className="ground-grid">
             {displayBoard.flatMap((row, y) =>
               row.map((flower, x) => (
@@ -220,13 +225,9 @@ export function RakaseiGame() {
           </div>
         </div>
 
-        <div className="earth-line" aria-hidden="true">
-          {Array.from({ length: 12 }, (_, index) => <i key={index} />)}
-        </div>
+        <div className="earth-line" aria-hidden="true" />
 
         <div className="field-soil" aria-label="地下 6列6段 落花生エリア">
-          <div className="soil-detail soil-detail--root" />
-          <div className="soil-detail soil-detail--stone" />
           <div className="underground-grid">
             {state.undergroundBoard.flatMap((row, y) =>
               row.map((peanut, x) => (
@@ -307,9 +308,16 @@ export function RakaseiGame() {
         {state.gameStatus === "gameover" && (
           <div className="gameover" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
             <div className="gameover__panel">
-              <span className="gameover__sprout" aria-hidden="true">🌱</span>
               <h1 id="gameover-title">ゲームオーバー</h1>
-              <p>SCORE <strong>{state.score.toLocaleString("ja-JP")}</strong></p>
+              <div className="gameover__result">
+                <img
+                  className="gameover__mascot"
+                  src={GAME_ASSETS.mascot}
+                  alt="らっかせいのマスコット"
+                  draggable={false}
+                />
+                <p>SCORE <strong>{state.score.toLocaleString("ja-JP")}</strong></p>
+              </div>
               <button type="button" onClick={() => dispatch({ type: "RESET" })}>
                 もういちど
               </button>

@@ -4,7 +4,7 @@ import "./globals.css";
 
 const title = "らっかせい！｜花をつなげる落ちものパズル";
 const description =
-  "黄色・ピンク・紫の花をつなげて遊ぶ、かわいいスマートフォン向け落ちものパズル。";
+  "黄色・ピンク・青・紫の花をつなげて遊ぶ、かわいいスマートフォン向け落ちものパズル。";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
