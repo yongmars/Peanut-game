@@ -452,6 +452,32 @@ button {
     calc(320ms + var(--peanut-index, 0) * 140ms) both;
 }
 
+.peanut--harvesting {
+  z-index: 7;
+  animation: peanut-harvest 500ms cubic-bezier(.2, .8, .25, 1) both;
+}
+
+.peanut--harvesting .peanut__eye {
+  height: 2px;
+  border-radius: 50%;
+  transform: rotate(8deg);
+}
+
+.peanut--harvesting .peanut__eye--right {
+  transform: rotate(-8deg);
+}
+
+.peanut--harvesting .peanut__mouth {
+  left: 40%;
+  top: 40%;
+  width: 20%;
+  height: 12%;
+  border: 1px solid #69402d;
+  border-top: 0;
+  border-radius: 0 0 50% 50%;
+  background: #ef8d7b;
+}
+
 .chain-callout {
   position: absolute;
   z-index: 8;
@@ -472,6 +498,32 @@ button {
   animation: chain-pop 520ms cubic-bezier(.2, 1.35, .4, 1) both;
 }
 
+.harvest-callout {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 79%;
+  padding: 5px 14px 6px;
+  border: 2px solid rgb(255 255 255 / 84%);
+  border-radius: 999px;
+  color: #fffdf2;
+  font-size: clamp(15px, calc(var(--cell-size) * .5), 20px);
+  font-weight: 900;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  background: rgb(89 164 76 / 92%);
+  box-shadow: 0 3px 0 rgb(49 103 43 / 40%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: harvest-message 500ms ease-out both;
+}
+
+.harvest-callout--large {
+  color: #62401e;
+  background: #ffd966;
+  box-shadow: 0 3px 0 #c69031;
+}
+
 @keyframes stem-grow {
   0% { opacity: 0; transform: scaleY(0); }
   12% { opacity: 1; }
@@ -484,6 +536,35 @@ button {
   0% { opacity: 0; transform: translateY(7px) scale(.45); }
   72% { opacity: 1; transform: translateY(-2px) scale(1.12); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes peanut-harvest {
+  0% {
+    opacity: 1;
+    filter: brightness(1) drop-shadow(0 2px 0 rgb(67 43 27 / 25%));
+    transform: translateY(0) scale(1);
+  }
+  28% {
+    opacity: 1;
+    filter: brightness(1.25) drop-shadow(0 0 6px rgb(255 236 123 / 90%));
+    transform: translateY(-3px) scale(1.13);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(2px) scale(.96);
+  }
+  100% {
+    opacity: 0;
+    filter: brightness(1.18) drop-shadow(0 0 4px rgb(255 236 123 / 70%));
+    transform: translateY(calc(var(--cell-size) * -1.15)) scale(.72) rotate(7deg);
+  }
+}
+
+@keyframes harvest-message {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.8); }
+  22% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -62%) scale(.96); }
 }
 
 @keyframes chain-pop {
@@ -646,7 +727,12 @@ button {
     animation: peanut-fade 180ms ease-out both;
   }
 
-  .chain-callout {
+  .peanut--harvesting {
+    animation: peanut-fade 180ms ease-out both reverse;
+  }
+
+  .chain-callout,
+  .harvest-callout {
     animation: none;
   }
 

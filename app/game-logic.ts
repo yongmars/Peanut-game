@@ -1,6 +1,7 @@
 export const GROUND_ROWS = 12;
 export const UNDERGROUND_ROWS = 6;
 export const COLS = 6;
+export const HARVEST_SCORE_PER_PEANUT = 250;
 
 export const FLOWER_COLORS = ["yellow", "pink", "purple"] as const;
 export type FlowerColor = (typeof FLOWER_COLORS)[number];
@@ -61,11 +62,19 @@ export type GrowthEffect = {
   sourceY: number;
 };
 
+export type HarvestCell = { x: number; y: number };
+
+export type HarvestEffect = {
+  id: number;
+  cells: HarvestCell[];
+  chain: number;
+};
+
 export type PendingResolution = {
   id: number;
   steps: ResolutionStep[];
   stepIndex: number;
-  phase: "clear" | "growth" | "gravity";
+  phase: "clear" | "growth" | "harvest" | "gravity";
 };
 
 export type GameState = {
@@ -78,7 +87,10 @@ export type GameState = {
   gameStatus: GameStatus;
   growthEffect: GrowthEffect | null;
   growthSequence: number;
-  pendingGameOver: boolean;
+  harvestEffect: HarvestEffect | null;
+  harvestSequence: number;
+  harvestCount: number;
+  undergroundChainCount: number;
   pendingResolution: PendingResolution | null;
   resolutionSequence: number;
 };
@@ -90,6 +102,7 @@ export type GameAction =
   | { type: "HARD_DROP" }
   | { type: "ADVANCE_RESOLUTION"; id: number }
   | { type: "FINISH_GROWTH"; id: number }
+  | { type: "FINISH_HARVEST"; id: number }
   | { type: "RESET" };
 
 const OFFSETS = [
@@ -392,6 +405,105 @@ export function addPeanuts(
   return result;
 }
 
+export function findHarvestGroups(board: UndergroundBoard): HarvestCell[][] {
+  const groups: HarvestCell[][] = [];
+  const visited = new Set<string>();
+  const directions = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const;
+
+  for (let y = 0; y < UNDERGROUND_ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const key = `${x},${y}`;
+      if (!board[y][x] || visited.has(key)) continue;
+
+      const group: HarvestCell[] = [];
+      const queue: HarvestCell[] = [{ x, y }];
+      visited.add(key);
+
+      while (queue.length) {
+        const cell = queue.shift()!;
+        group.push(cell);
+        directions.forEach(([dx, dy]) => {
+          const nx = cell.x + dx;
+          const ny = cell.y + dy;
+          const nextKey = `${nx},${ny}`;
+          if (
+            nx >= 0 &&
+            nx < COLS &&
+            ny >= 0 &&
+            ny < UNDERGROUND_ROWS &&
+            board[ny][nx] &&
+            !visited.has(nextKey)
+          ) {
+            visited.add(nextKey);
+            queue.push({ x: nx, y: ny });
+          }
+        });
+      }
+
+      if (group.length >= 3) groups.push(group);
+    }
+  }
+
+  return groups;
+}
+
+export function applyUndergroundGravity(
+  board: UndergroundBoard,
+): UndergroundBoard {
+  const result = createUndergroundBoard();
+  for (let x = 0; x < COLS; x += 1) {
+    const peanuts: Peanut[] = [];
+    for (let y = UNDERGROUND_ROWS - 1; y >= 0; y -= 1) {
+      const peanut = board[y][x];
+      if (peanut) peanuts.push(peanut);
+    }
+    peanuts.forEach((peanut, index) => {
+      result[UNDERGROUND_ROWS - 1 - index][x] = peanut;
+    });
+  }
+  return result;
+}
+
+function removeHarvestCells(
+  board: UndergroundBoard,
+  cells: HarvestCell[],
+): UndergroundBoard {
+  const result = board.map((row) => [...row]);
+  cells.forEach(({ x, y }) => {
+    result[y][x] = null;
+  });
+  return result;
+}
+
+export type UndergroundResolveResult = {
+  board: UndergroundBoard;
+  harvested: number;
+  chains: number;
+};
+
+export function resolveUndergroundBoard(
+  board: UndergroundBoard,
+): UndergroundResolveResult {
+  let current = board.map((row) => [...row]);
+  let harvested = 0;
+  let chains = 0;
+
+  while (true) {
+    const cells = findHarvestGroups(current).flat();
+    if (cells.length === 0) break;
+    chains += 1;
+    harvested += cells.length;
+    current = applyUndergroundGravity(removeHarvestCells(current, cells));
+  }
+
+  return { board: current, harvested, chains };
+}
+
 export function predictGrowthTarget(
   groundBoard: GroundBoard,
   undergroundBoard: UndergroundBoard,
@@ -423,7 +535,10 @@ export function createInitialState(random = Math.random): GameState {
     gameStatus: "playing",
     growthEffect: null,
     growthSequence: 0,
-    pendingGameOver: false,
+    harvestEffect: null,
+    harvestSequence: 0,
+    harvestCount: 0,
+    undergroundChainCount: 0,
     pendingResolution: null,
     resolutionSequence: 0,
   };
@@ -443,7 +558,7 @@ function finishTurn(
     nextPair: randomPair(),
     gameStatus: canSpawn ? "playing" : "gameover",
     growthEffect: null,
-    pendingGameOver: false,
+    harvestEffect: null,
     pendingResolution: null,
   };
 }
@@ -484,13 +599,64 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   if (action.type === "FINISH_GROWTH") {
     if (!state.growthEffect || state.growthEffect.id !== action.id) return state;
     const pending = state.pendingResolution;
+    if (!pending || pending.phase !== "growth") {
+      return { ...state, growthEffect: null };
+    }
+    const cells = findHarvestGroups(state.undergroundBoard).flat();
+    const harvestSequence = cells.length
+      ? state.harvestSequence + 1
+      : state.harvestSequence;
     return {
       ...state,
       growthEffect: null,
-      pendingResolution:
-        pending?.phase === "growth"
-          ? { ...pending, phase: "gravity" }
-          : pending,
+      harvestEffect: cells.length
+        ? { id: harvestSequence, cells, chain: 1 }
+        : null,
+      harvestSequence,
+      undergroundChainCount: cells.length ? 1 : 0,
+      pendingResolution: {
+        ...pending,
+        phase: cells.length ? "harvest" : "gravity",
+      },
+    };
+  }
+
+  if (action.type === "FINISH_HARVEST") {
+    const effect = state.harvestEffect;
+    const pending = state.pendingResolution;
+    if (
+      !effect ||
+      effect.id !== action.id ||
+      !pending ||
+      pending.phase !== "harvest"
+    ) {
+      return state;
+    }
+
+    const undergroundBoard = applyUndergroundGravity(
+      removeHarvestCells(state.undergroundBoard, effect.cells),
+    );
+    const nextCells = findHarvestGroups(undergroundBoard).flat();
+    const nextChain = effect.chain + 1;
+    const harvestSequence = nextCells.length
+      ? state.harvestSequence + 1
+      : state.harvestSequence;
+
+    return {
+      ...state,
+      undergroundBoard,
+      score:
+        state.score + effect.cells.length * HARVEST_SCORE_PER_PEANUT,
+      harvestCount: state.harvestCount + effect.cells.length,
+      harvestEffect: nextCells.length
+        ? { id: harvestSequence, cells: nextCells, chain: nextChain }
+        : null,
+      harvestSequence,
+      undergroundChainCount: nextCells.length ? nextChain : effect.chain,
+      pendingResolution: {
+        ...pending,
+        phase: nextCells.length ? "harvest" : "gravity",
+      },
     };
   }
 
@@ -528,6 +694,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
               }
             : null,
         growthSequence,
+        undergroundChainCount: 0,
         pendingResolution: {
           ...pending,
           phase: rows.length ? "growth" : "gravity",
@@ -535,7 +702,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    if (pending.phase === "growth") return state;
+    if (pending.phase === "growth" || pending.phase === "harvest") return state;
 
     const nextIndex = pending.stepIndex + 1;
     if (nextIndex < pending.steps.length) {
@@ -557,6 +724,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     state.gameStatus !== "playing" ||
     !state.activePair ||
     state.growthEffect ||
+    state.harvestEffect ||
     state.pendingResolution
   ) {
     return state;

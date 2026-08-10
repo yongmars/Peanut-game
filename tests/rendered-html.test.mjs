@@ -13,7 +13,7 @@ async function render() {
   );
 }
 
-test("server-renders the Phase 3 game screen", async () => {
+test("server-renders the Phase 4 game screen", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();

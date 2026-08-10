@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyUndergroundGravity,
   canPlace,
   createGroundBoard,
   createInitialState,
   createUndergroundBoard,
+  findHarvestGroups,
+  findUndergroundSlots,
   gameReducer,
   getLandedPairCells,
   predictGrowthTarget,
+  resolveUndergroundBoard,
   resolveAfterLanding,
   resolveBoard,
   spawnPair,
+  HARVEST_SCORE_PER_PEANUT,
 } from "../app/game-logic.ts";
 
 function makeState(overrides = {}) {
@@ -21,24 +26,83 @@ function peanutCount(board) {
   return board.flat().filter(Boolean).length;
 }
 
+function placePeanuts(board, cells) {
+  cells.forEach(([x, y]) => {
+    board[y][x] = { type: "standard" };
+  });
+  return board;
+}
+
 function finishResolution(state) {
   let current = state;
   let guard = 0;
   while (current.pendingResolution) {
     guard += 1;
     assert.ok(guard < 30, "resolution should finish");
-    current = current.growthEffect
+    current = current.harvestEffect
       ? gameReducer(current, {
+          type: "FINISH_HARVEST",
+          id: current.harvestEffect.id,
+        })
+      : current.growthEffect
+        ? gameReducer(current, {
           type: "FINISH_GROWTH",
           id: current.growthEffect.id,
         })
-      : gameReducer(current, {
-          type: "ADVANCE_RESOLUTION",
-          id: current.pendingResolution.id,
-        });
+        : gameReducer(current, {
+            type: "ADVANCE_RESOLUTION",
+            id: current.pendingResolution.id,
+          });
   }
   return current;
 }
+
+test("underground groups use orthogonal connections and harvest every member", () => {
+  const board = placePeanuts(createUndergroundBoard(), [
+    [1, 5],
+    [1, 4],
+    [2, 4],
+    [3, 4],
+  ]);
+  assert.equal(findHarvestGroups(board).length, 1);
+  assert.equal(findHarvestGroups(board)[0].length, 4);
+
+  const diagonal = placePeanuts(createUndergroundBoard(), [
+    [0, 5],
+    [1, 4],
+    [2, 3],
+  ]);
+  assert.equal(findHarvestGroups(diagonal).length, 0);
+});
+
+test("underground gravity packs every column from the bottom", () => {
+  const board = placePeanuts(createUndergroundBoard(), [
+    [2, 0],
+    [2, 3],
+    [4, 2],
+  ]);
+  const result = applyUndergroundGravity(board);
+  assert.ok(result[5][2]);
+  assert.ok(result[4][2]);
+  assert.ok(result[5][4]);
+  assert.equal(result[0][2], null);
+  assert.equal(result[3][2], null);
+});
+
+test("underground gravity can trigger a second harvest chain", () => {
+  const board = placePeanuts(createUndergroundBoard(), [
+    [0, 3],
+    [1, 3],
+    [2, 3],
+    [0, 0],
+    [1, 5],
+    [2, 5],
+  ]);
+  const result = resolveUndergroundBoard(board);
+  assert.equal(result.chains, 2);
+  assert.equal(result.harvested, 6);
+  assert.equal(peanutCount(result.board), 0);
+});
 
 test("a group of four clears and scores 400 points", () => {
   const board = createGroundBoard();
@@ -262,7 +326,7 @@ test("the pivot column wins when both dropped flowers clear", () => {
   assert.deepEqual(result.undergroundBoard[5][2], { type: "standard" });
 });
 
-test("two chains create one peanut then two more", () => {
+test("two chains create three peanuts and harvest the connected group", () => {
   const groundBoard = createGroundBoard();
   for (let y = 9; y < 12; y += 1) groundBoard[y][0] = "yellow";
   groundBoard[11][1] = "pink";
@@ -278,11 +342,10 @@ test("two chains create one peanut then two more", () => {
   ));
 
   assert.equal(result.chainCount, 2);
-  assert.equal(result.score, 1200);
-  assert.equal(peanutCount(result.undergroundBoard), 3);
-  assert.deepEqual(result.undergroundBoard[5][0], { type: "standard" });
-  assert.deepEqual(result.undergroundBoard[4][0], { type: "standard" });
-  assert.deepEqual(result.undergroundBoard[3][0], { type: "standard" });
+  assert.equal(result.score, 1200 + 3 * HARVEST_SCORE_PER_PEANUT);
+  assert.equal(peanutCount(result.undergroundBoard), 0);
+  assert.equal(result.harvestCount, 3);
+  assert.equal(result.undergroundChainCount, 1);
 });
 
 test("three chains create one, two, and three peanuts in their causal columns", () => {
@@ -311,15 +374,8 @@ test("three chains create one, two, and three peanuts in their causal columns", 
 
   const result = finishResolution(initial);
   assert.equal(result.chainCount, 3);
-  assert.equal(peanutCount(result.undergroundBoard), 6);
-  assert.equal(
-    result.undergroundBoard.filter((row) => row[0]).length,
-    3,
-  );
-  assert.equal(
-    result.undergroundBoard.filter((row) => row[1]).length,
-    3,
-  );
+  assert.equal(peanutCount(result.undergroundBoard), 0);
+  assert.equal(result.harvestCount, 6);
 });
 
 test("the reducer displays clear and gravity as separate chain stages", () => {
@@ -377,6 +433,104 @@ test("the reducer displays clear and gravity as separate chain stages", () => {
   assert.deepEqual(state.growthEffect?.rows, [4, 3]);
 });
 
+test("harvest animation removes peanuts, updates totals, and resumes ground resolution", () => {
+  const groundBoard = createGroundBoard();
+  groundBoard[11][0] = "yellow";
+  groundBoard[11][1] = "yellow";
+  groundBoard[11][2] = "yellow";
+  const undergroundBoard = placePeanuts(createUndergroundBoard(), [
+    [3, 5],
+    [3, 4],
+  ]);
+  let state = gameReducer(
+    makeState({
+      groundBoard,
+      undergroundBoard,
+      activePair: { colors: ["yellow", "pink"], x: 3, y: 11, rotation: 1 },
+    }),
+    { type: "HARD_DROP" },
+  );
+
+  state = gameReducer(state, {
+    type: "ADVANCE_RESOLUTION",
+    id: state.pendingResolution.id,
+  });
+  assert.equal(state.growthEffect?.rows.length, 1);
+  assert.equal(peanutCount(state.undergroundBoard), 3);
+
+  state = gameReducer(state, {
+    type: "FINISH_GROWTH",
+    id: state.growthEffect.id,
+  });
+  assert.equal(state.pendingResolution?.phase, "harvest");
+  assert.equal(state.harvestEffect?.cells.length, 3);
+  assert.equal(peanutCount(state.undergroundBoard), 3);
+  assert.equal(gameReducer(state, { type: "MOVE", dx: -1 }), state);
+
+  state = gameReducer(state, {
+    type: "FINISH_HARVEST",
+    id: state.harvestEffect.id,
+  });
+  assert.equal(peanutCount(state.undergroundBoard), 0);
+  assert.equal(state.harvestCount, 3);
+  assert.equal(state.score, 400 + 3 * HARVEST_SCORE_PER_PEANUT);
+  assert.equal(state.pendingResolution?.phase, "gravity");
+
+  const resumed = finishResolution(state);
+  assert.equal(resumed.activePair?.x, 2);
+  assert.equal(gameReducer(resumed, { type: "MOVE", dx: -1 }).activePair?.x, 1);
+});
+
+test("the reducer counts consecutive underground harvests", () => {
+  const undergroundBoard = placePeanuts(createUndergroundBoard(), [
+    [0, 3],
+    [1, 3],
+    [2, 3],
+    [0, 0],
+    [1, 5],
+    [2, 5],
+  ]);
+  let state = makeState({
+    undergroundBoard,
+    activePair: null,
+    growthEffect: {
+      id: 1,
+      chain: 1,
+      column: 0,
+      rows: [3],
+      sourceX: 0,
+      sourceY: 8,
+    },
+    growthSequence: 1,
+    pendingResolution: {
+      id: 1,
+      steps: [],
+      stepIndex: 0,
+      phase: "growth",
+    },
+  });
+
+  state = gameReducer(state, { type: "FINISH_GROWTH", id: 1 });
+  assert.equal(state.harvestEffect?.chain, 1);
+  assert.equal(state.harvestEffect?.cells.length, 3);
+
+  state = gameReducer(state, {
+    type: "FINISH_HARVEST",
+    id: state.harvestEffect.id,
+  });
+  assert.equal(state.harvestEffect?.chain, 2);
+  assert.equal(state.undergroundChainCount, 2);
+
+  state = gameReducer(state, {
+    type: "FINISH_HARVEST",
+    id: state.harvestEffect.id,
+  });
+  assert.equal(state.harvestEffect, null);
+  assert.equal(state.harvestCount, 6);
+  assert.equal(state.undergroundChainCount, 2);
+  assert.equal(state.score, 6 * HARVEST_SCORE_PER_PEANUT);
+});
+
 test("peanuts stack from the bottom and a full column produces none", () => {
   const groundBoard = createGroundBoard();
   groundBoard[11][0] = "yellow";
@@ -385,13 +539,13 @@ test("peanuts stack from the bottom and a full column produces none", () => {
   const pair = { colors: ["yellow", "pink"], x: 3, y: 11, rotation: 1 };
   const undergroundBoard = createUndergroundBoard();
   undergroundBoard[5][3] = { type: "standard" };
-  undergroundBoard[4][3] = { type: "standard" };
 
   const stacked = finishResolution(gameReducer(
     makeState({ groundBoard, undergroundBoard, activePair: pair }),
     { type: "HARD_DROP" },
   ));
-  assert.deepEqual(stacked.undergroundBoard[3][3], { type: "standard" });
+  assert.deepEqual(stacked.undergroundBoard[4][3], { type: "standard" });
+  assert.equal(stacked.harvestCount, 0);
 
   const fullUnderground = createUndergroundBoard();
   for (let row = 0; row < 6; row += 1) {
@@ -406,29 +560,12 @@ test("peanuts stack from the bottom and a full column produces none", () => {
   assert.equal(full.gameStatus, "playing");
 });
 
-test("a chain batch fills only the underground slots that remain", () => {
-  const groundBoard = createGroundBoard();
-  for (let y = 9; y < 12; y += 1) groundBoard[y][0] = "yellow";
-  groundBoard[11][1] = "pink";
-  groundBoard[11][2] = "pink";
-  groundBoard[11][3] = "pink";
+test("a peanut batch uses only the underground slots that remain", () => {
   const undergroundBoard = createUndergroundBoard();
-  for (let row = 2; row < 6; row += 1) {
+  for (let row = 1; row < 6; row += 1) {
     undergroundBoard[row][0] = { type: "standard" };
   }
-
-  const result = finishResolution(gameReducer(
-    makeState({
-      groundBoard,
-      undergroundBoard,
-      activePair: { colors: ["yellow", "pink"], x: 0, y: 8, rotation: 0 },
-    }),
-    { type: "HARD_DROP" },
-  ));
-
-  assert.equal(result.chainCount, 2);
-  assert.equal(result.undergroundBoard.filter((row) => row[0]).length, 6);
-  assert.equal(result.gameStatus, "playing");
+  assert.deepEqual(findUndergroundSlots(undergroundBoard, 0, 3), [0]);
 });
 
 test("prediction uses the same landing column and hides for non-clears", () => {

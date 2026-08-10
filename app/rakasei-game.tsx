@@ -37,15 +37,17 @@ function PeanutPiece({
   peanut,
   preview = false,
   appearingIndex = -1,
+  harvesting = false,
 }: {
   peanut: Peanut;
   preview?: boolean;
   appearingIndex?: number;
+  harvesting?: boolean;
 }) {
   const appearing = appearingIndex >= 0;
   return (
     <span
-      className={`peanut peanut--${peanut.type}${preview ? " peanut--preview" : ""}${appearing ? " peanut--appearing" : ""}`}
+      className={`peanut peanut--${peanut.type}${preview ? " peanut--preview" : ""}${appearing ? " peanut--appearing" : ""}${harvesting ? " peanut--harvesting" : ""}`}
       style={
         appearing
           ? ({ "--peanut-index": appearingIndex } as CSSProperties)
@@ -102,7 +104,21 @@ export function RakaseiGame() {
   }, [state.growthEffect]);
 
   useEffect(() => {
-    if (!state.pendingResolution || state.pendingResolution.phase === "growth") return;
+    if (!state.harvestEffect) return;
+    const id = state.harvestEffect.id;
+    const timer = window.setTimeout(
+      () => dispatch({ type: "FINISH_HARVEST", id }),
+      520,
+    );
+    return () => window.clearTimeout(timer);
+  }, [state.harvestEffect]);
+
+  useEffect(() => {
+    if (
+      !state.pendingResolution ||
+      state.pendingResolution.phase === "growth" ||
+      state.pendingResolution.phase === "harvest"
+    ) return;
     const { id, phase } = state.pendingResolution;
     const timer = window.setTimeout(
       () => dispatch({ type: "ADVANCE_RESOLUTION", id }),
@@ -163,6 +179,14 @@ export function RakaseiGame() {
     ],
   );
 
+  const harvestKeys = useMemo(
+    () =>
+      new Set(
+        state.harvestEffect?.cells.map(({ x, y }) => `${x},${y}`) ?? [],
+      ),
+    [state.harvestEffect],
+  );
+
   return (
     <main className="game-shell">
       <header className="hud" aria-label="ゲーム情報">
@@ -215,6 +239,7 @@ export function RakaseiGame() {
                           ? state.growthEffect.rows.indexOf(y)
                           : -1
                       }
+                      harvesting={harvestKeys.has(`${x},${y}`)}
                     />
                   )}
                 </div>
@@ -258,6 +283,23 @@ export function RakaseiGame() {
           </div>
         )}
 
+        {state.harvestEffect && (
+          <div
+            className={`harvest-callout${
+              state.harvestEffect.cells.length >= 6 ||
+              state.harvestEffect.chain >= 2
+                ? " harvest-callout--large"
+                : ""
+            }`}
+            aria-live="polite"
+          >
+            {state.harvestEffect.cells.length >= 6 ||
+            state.harvestEffect.chain >= 2
+              ? "大収穫！"
+              : "収穫！"}
+          </div>
+        )}
+
         <span className="sr-only" aria-live="polite">
           {state.growthEffect ? "地下に落花生ができました" : ""}
         </span>
@@ -276,8 +318,11 @@ export function RakaseiGame() {
         )}
       </section>
 
-      <div className="harvest-count" aria-label="収穫した落花生 0個">
-        <span>収穫</span><strong>🥜 × 0</strong>
+      <div
+        className="harvest-count"
+        aria-label={`収穫した落花生 ${state.harvestCount}個`}
+      >
+        <span>収穫</span><strong>🥜 × {state.harvestCount}</strong>
       </div>
 
       <nav className="controls" aria-label="ゲーム操作">
