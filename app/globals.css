@@ -448,7 +448,28 @@ button {
 
 .peanut--appearing {
   opacity: 0;
-  animation: peanut-pop 300ms cubic-bezier(.22, 1.5, .5, 1) 320ms both;
+  animation: peanut-pop 300ms cubic-bezier(.22, 1.5, .5, 1)
+    calc(320ms + var(--peanut-index, 0) * 140ms) both;
+}
+
+.chain-callout {
+  position: absolute;
+  z-index: 8;
+  top: 38%;
+  left: 50%;
+  padding: 5px 13px 6px;
+  border: 2px solid rgb(255 255 255 / 82%);
+  border-radius: 999px;
+  color: #fffdf4;
+  font-size: clamp(16px, calc(var(--cell-size) * .55), 22px);
+  font-weight: 900;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  background: rgb(224 104 119 / 88%);
+  box-shadow: 0 3px 0 rgb(142 69 75 / 38%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: chain-pop 520ms cubic-bezier(.2, 1.35, .4, 1) both;
 }
 
 @keyframes stem-grow {
@@ -463,6 +484,12 @@ button {
   0% { opacity: 0; transform: translateY(7px) scale(.45); }
   72% { opacity: 1; transform: translateY(-2px) scale(1.12); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes chain-pop {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.72); }
+  32% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 .gameover {
@@ -617,6 +644,10 @@ button {
 
   .peanut--appearing {
     animation: peanut-fade 180ms ease-out both;
+  }
+
+  .chain-callout {
+    animation: none;
   }
 
   @keyframes stem-fade {

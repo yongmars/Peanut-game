@@ -40,6 +40,7 @@ export type ResolveResult = {
 
 export type ResolutionStep = {
   clearCells: ClearedCell[];
+  growthSource: PairCell | null;
   boardAfterClear: GroundBoard;
   boardAfterGravity: GroundBoard;
 };
@@ -51,14 +52,20 @@ export type GrowthTarget = {
   sourceY: number;
 };
 
-export type GrowthEffect = GrowthTarget & { id: number };
+export type GrowthEffect = {
+  id: number;
+  chain: number;
+  column: number;
+  rows: number[];
+  sourceX: number;
+  sourceY: number;
+};
 
 export type PendingResolution = {
   id: number;
   steps: ResolutionStep[];
   stepIndex: number;
-  phase: "clear" | "gravity";
-  growthTarget: GrowthTarget | null;
+  phase: "clear" | "growth" | "gravity";
 };
 
 export type GameState = {
@@ -183,24 +190,35 @@ function findClearGroups(board: GroundBoard): ClearedCell[][] {
   return groups;
 }
 
-function findTriggeredClearCells(
+type TriggerCell = PairCell & { fallDistance?: number };
+
+type TriggeredClear = {
+  cells: ClearedCell[];
+  source: PairCell | null;
+};
+
+function findTriggeredClear(
   board: GroundBoard,
-  triggerCells: Array<Pick<PairCell, "x" | "y">>,
-): ClearedCell[] {
+  triggerCells: TriggerCell[],
+): TriggeredClear {
   const triggerKeys = new Set(triggerCells.map(({ x, y }) => `${x},${y}`));
-  return findClearGroups(board)
+  const cells = findClearGroups(board)
     .filter((group) =>
       group.some(({ x, y }) => triggerKeys.has(`${x},${y}`)),
     )
     .flat();
+  const clearedKeys = new Set(cells.map(({ x, y }) => `${x},${y}`));
+  const source =
+    triggerCells.find(({ x, y }) => clearedKeys.has(`${x},${y}`)) ?? null;
+  return { cells, source };
 }
 
 function applyGravity(board: GroundBoard): {
   board: GroundBoard;
-  movedCells: Array<Pick<PairCell, "x" | "y">>;
+  movedCells: TriggerCell[];
 } {
   const result = createGroundBoard();
-  const movedCells: Array<Pick<PairCell, "x" | "y">> = [];
+  const movedCells: TriggerCell[] = [];
   for (let x = 0; x < COLS; x += 1) {
     const flowers: Array<{ color: FlowerColor; sourceY: number }> = [];
     for (let y = GROUND_ROWS - 1; y >= 0; y -= 1) {
@@ -211,16 +229,27 @@ function applyGravity(board: GroundBoard): {
       const destinationY = GROUND_ROWS - 1 - index;
       result[destinationY][x] = color;
       if (sourceY !== destinationY) {
-        movedCells.push({ x, y: destinationY });
+        movedCells.push({
+          x,
+          y: destinationY,
+          color,
+          fallDistance: destinationY - sourceY,
+        });
       }
     });
   }
+  movedCells.sort(
+    (a, b) =>
+      (b.fallDistance ?? 0) - (a.fallDistance ?? 0) ||
+      a.x - b.x ||
+      b.y - a.y,
+  );
   return { board: result, movedCells };
 }
 
 function resolveFromFirstClear(
   board: GroundBoard,
-  initialClear: ClearedCell[],
+  initialClear: TriggeredClear,
 ): ResolveResult {
   let current = board.map((row) => [...row]);
   let points = 0;
@@ -229,29 +258,31 @@ function resolveFromFirstClear(
   const steps: ResolutionStep[] = [];
   let clear = initialClear;
 
-  while (clear.length > 0) {
+  while (clear.cells.length > 0) {
     chains += 1;
-    if (chains === 1) firstClearCells = clear;
-    points += clear.length * 100 * chains;
-    clear.forEach(({ x, y }) => {
+    if (chains === 1) firstClearCells = clear.cells;
+    points += clear.cells.length * 100 * chains;
+    clear.cells.forEach(({ x, y }) => {
       current[y][x] = null;
     });
     const boardAfterClear = current.map((row) => [...row]);
     const gravity = applyGravity(current);
     current = gravity.board;
     steps.push({
-      clearCells: clear,
+      clearCells: clear.cells,
+      growthSource: clear.source,
       boardAfterClear,
       boardAfterGravity: current.map((row) => [...row]),
     });
-    clear = findTriggeredClearCells(current, gravity.movedCells);
+    clear = findTriggeredClear(current, gravity.movedCells);
   }
 
   return { board: current, points, chains, firstClearCells, steps };
 }
 
 export function resolveBoard(board: GroundBoard): ResolveResult {
-  return resolveFromFirstClear(board, findClearGroups(board).flat());
+  const cells = findClearGroups(board).flat();
+  return resolveFromFirstClear(board, { cells, source: cells[0] ?? null });
 }
 
 export function resolveAfterLanding(
@@ -260,7 +291,7 @@ export function resolveAfterLanding(
 ): ResolveResult {
   return resolveFromFirstClear(
     board,
-    findTriggeredClearCells(board, landedCells),
+    findTriggeredClear(board, landedCells),
   );
 }
 
@@ -337,6 +368,30 @@ export function addPeanut(
   return result;
 }
 
+export function findUndergroundSlots(
+  board: UndergroundBoard,
+  column: number,
+  count: number,
+): number[] {
+  const rows: number[] = [];
+  for (let row = UNDERGROUND_ROWS - 1; row >= 0 && rows.length < count; row -= 1) {
+    if (board[row][column] === null) rows.push(row);
+  }
+  return rows;
+}
+
+export function addPeanuts(
+  board: UndergroundBoard,
+  column: number,
+  rows: number[],
+): UndergroundBoard {
+  const result = board.map((row) => [...row]);
+  rows.forEach((row) => {
+    result[row][column] = { type: "standard" };
+  });
+  return result;
+}
+
 export function predictGrowthTarget(
   groundBoard: GroundBoard,
   undergroundBoard: UndergroundBoard,
@@ -377,29 +432,18 @@ export function createInitialState(random = Math.random): GameState {
 function finishTurn(
   state: GameState,
   board: GroundBoard,
-  growthTarget: GrowthTarget | null,
 ): GameState {
-  const undergroundBoard = growthTarget
-    ? addPeanut(state.undergroundBoard, growthTarget)
-    : state.undergroundBoard;
   const nextActive = spawnPair(state.nextPair);
   const canSpawn = canPlace(board, nextActive);
-  const growthSequence = growthTarget
-    ? state.growthSequence + 1
-    : state.growthSequence;
 
   return {
     ...state,
     groundBoard: board,
-    undergroundBoard,
     activePair: canSpawn ? nextActive : null,
     nextPair: randomPair(),
-    gameStatus: growthTarget || canSpawn ? "playing" : "gameover",
-    growthEffect: growthTarget
-      ? { ...growthTarget, id: growthSequence }
-      : null,
-    growthSequence,
-    pendingGameOver: Boolean(growthTarget && !canSpawn),
+    gameStatus: canSpawn ? "playing" : "gameover",
+    growthEffect: null,
+    pendingGameOver: false,
     pendingResolution: null,
   };
 }
@@ -411,16 +455,10 @@ function settlePair(state: GameState, pair: ActivePair): GameState {
     lockedBoard,
     landedCells,
   );
-  const growthTarget = selectGrowthTarget(
-    landedCells,
-    resolved.firstClearCells,
-    state.undergroundBoard,
-  );
   if (resolved.steps.length === 0) {
     return finishTurn(
       { ...state, chainCount: 0 },
       lockedBoard,
-      null,
     );
   }
 
@@ -435,7 +473,6 @@ function settlePair(state: GameState, pair: ActivePair): GameState {
       steps: resolved.steps,
       stepIndex: 0,
       phase: "clear",
-      growthTarget,
     },
     resolutionSequence,
   };
@@ -446,11 +483,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
   if (action.type === "FINISH_GROWTH") {
     if (!state.growthEffect || state.growthEffect.id !== action.id) return state;
+    const pending = state.pendingResolution;
     return {
       ...state,
       growthEffect: null,
-      pendingGameOver: false,
-      gameStatus: state.pendingGameOver ? "gameover" : "playing",
+      pendingResolution:
+        pending?.phase === "growth"
+          ? { ...pending, phase: "gravity" }
+          : pending,
     };
   }
 
@@ -461,14 +501,41 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
     if (pending.phase === "clear") {
       const chain = pending.stepIndex + 1;
+      const source = step.growthSource;
+      const rows = source
+        ? findUndergroundSlots(state.undergroundBoard, source.x, chain)
+        : [];
+      const growthSequence = rows.length
+        ? state.growthSequence + 1
+        : state.growthSequence;
       return {
         ...state,
         groundBoard: step.boardAfterClear,
+        undergroundBoard: source
+          ? addPeanuts(state.undergroundBoard, source.x, rows)
+          : state.undergroundBoard,
         score: state.score + step.clearCells.length * 100 * chain,
         chainCount: chain,
-        pendingResolution: { ...pending, phase: "gravity" },
+        growthEffect:
+          source && rows.length
+            ? {
+                id: growthSequence,
+                chain,
+                column: source.x,
+                rows,
+                sourceX: source.x,
+                sourceY: source.y,
+              }
+            : null,
+        growthSequence,
+        pendingResolution: {
+          ...pending,
+          phase: rows.length ? "growth" : "gravity",
+        },
       };
     }
+
+    if (pending.phase === "growth") return state;
 
     const nextIndex = pending.stepIndex + 1;
     if (nextIndex < pending.steps.length) {
@@ -483,7 +550,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    return finishTurn(state, step.boardAfterGravity, pending.growthTarget);
+    return finishTurn(state, step.boardAfterGravity);
   }
 
   if (

@@ -36,15 +36,21 @@ function GroundCell({ flower }: { flower: GroundCellData }) {
 function PeanutPiece({
   peanut,
   preview = false,
-  appearing = false,
+  appearingIndex = -1,
 }: {
   peanut: Peanut;
   preview?: boolean;
-  appearing?: boolean;
+  appearingIndex?: number;
 }) {
+  const appearing = appearingIndex >= 0;
   return (
     <span
       className={`peanut peanut--${peanut.type}${preview ? " peanut--preview" : ""}${appearing ? " peanut--appearing" : ""}`}
+      style={
+        appearing
+          ? ({ "--peanut-index": appearingIndex } as CSSProperties)
+          : undefined
+      }
       aria-label={preview ? "生成予定の落花生" : "落花生"}
       role="img"
       data-peanut={preview ? "preview" : "grown"}
@@ -65,7 +71,7 @@ type GrowthStyle = CSSProperties & {
   "--growth-target-row": number;
 };
 
-function getGrowthStyle(target: GrowthTarget): GrowthStyle {
+function getGrowthStyle(target: Pick<GrowthTarget, "column" | "sourceY" | "row">): GrowthStyle {
   return {
     "--growth-column": target.column,
     "--growth-source-row": target.sourceY,
@@ -90,13 +96,13 @@ export function RakaseiGame() {
     const id = state.growthEffect.id;
     const timer = window.setTimeout(
       () => dispatch({ type: "FINISH_GROWTH", id }),
-      650,
+      650 + Math.max(0, state.growthEffect.rows.length - 1) * 140,
     );
     return () => window.clearTimeout(timer);
   }, [state.growthEffect]);
 
   useEffect(() => {
-    if (!state.pendingResolution) return;
+    if (!state.pendingResolution || state.pendingResolution.phase === "growth") return;
     const { id, phase } = state.pendingResolution;
     const timer = window.setTimeout(
       () => dispatch({ type: "ADVANCE_RESOLUTION", id }),
@@ -204,9 +210,10 @@ export function RakaseiGame() {
                   {peanut && (
                     <PeanutPiece
                       peanut={peanut}
-                      appearing={
-                        state.growthEffect?.column === x &&
-                        state.growthEffect.row === y
+                      appearingIndex={
+                        state.growthEffect?.column === x
+                          ? state.growthEffect.rows.indexOf(y)
+                          : -1
                       }
                     />
                   )}
@@ -233,11 +240,21 @@ export function RakaseiGame() {
         {state.growthEffect && (
           <div
             className="growth-guide growth-guide--active"
-            style={getGrowthStyle(state.growthEffect)}
+            style={getGrowthStyle({
+              column: state.growthEffect.column,
+              sourceY: state.growthEffect.sourceY,
+              row: Math.min(...state.growthEffect.rows),
+            })}
             aria-hidden="true"
             data-growth-effect
           >
             <i className="growth-guide__stem" />
+          </div>
+        )}
+
+        {state.pendingResolution && state.chainCount >= 2 && (
+          <div className="chain-callout" key={state.chainCount} aria-live="polite">
+            {state.chainCount}れんさ！
           </div>
         )}
 
