@@ -6,6 +6,7 @@ import {
   createInitialState,
   createUndergroundBoard,
   gameReducer,
+  getLandedPairCells,
   predictGrowthTarget,
   resolveAfterLanding,
   resolveBoard,
@@ -133,6 +134,64 @@ test("a pair cannot spawn through occupied cells", () => {
   assert.equal(canPlace(board, pair), true);
   board[0][2] = "purple";
   assert.equal(canPlace(board, pair), false);
+});
+
+test("an unsupported flower in a horizontal pair falls independently", () => {
+  const board = createGroundBoard();
+  board[11][2] = "purple";
+  const pair = { colors: ["yellow", "pink"], x: 2, y: 10, rotation: 1 };
+
+  assert.deepEqual(getLandedPairCells(board, pair), [
+    { x: 2, y: 10, color: "yellow" },
+    { x: 3, y: 11, color: "pink" },
+  ]);
+
+  const result = gameReducer(makeState({ groundBoard: board, activePair: pair }), {
+    type: "HARD_DROP",
+  });
+  assert.equal(result.groundBoard[10][2], "yellow");
+  assert.equal(result.groundBoard[11][3], "pink");
+});
+
+test("horizontal split landing also works when the partner is on the left", () => {
+  const board = createGroundBoard();
+  board[11][3] = "purple";
+  const pair = { colors: ["yellow", "pink"], x: 3, y: 10, rotation: 3 };
+
+  assert.deepEqual(getLandedPairCells(board, pair), [
+    { x: 3, y: 10, color: "yellow" },
+    { x: 2, y: 11, color: "pink" },
+  ]);
+});
+
+test("vertical pairs keep their two flowers together when landing", () => {
+  const board = createGroundBoard();
+  board[11][2] = "purple";
+
+  assert.deepEqual(
+    getLandedPairCells(board, {
+      colors: ["yellow", "pink"],
+      x: 2,
+      y: 10,
+      rotation: 0,
+    }),
+    [
+      { x: 2, y: 10, color: "yellow" },
+      { x: 2, y: 9, color: "pink" },
+    ],
+  );
+  assert.deepEqual(
+    getLandedPairCells(board, {
+      colors: ["yellow", "pink"],
+      x: 2,
+      y: 9,
+      rotation: 2,
+    }),
+    [
+      { x: 2, y: 9, color: "yellow" },
+      { x: 2, y: 10, color: "pink" },
+    ],
+  );
 });
 
 test("the pivot flower creates one peanut in its own column", () => {
@@ -306,6 +365,24 @@ test("prediction uses the same landing column and hides for non-clears", () => {
     predictGrowthTarget(createGroundBoard(), undergroundBoard, spawnPair(["yellow", "pink"])),
     null,
   );
+});
+
+test("prediction uses the independently dropped flower position", () => {
+  const groundBoard = createGroundBoard();
+  const undergroundBoard = createUndergroundBoard();
+  groundBoard[11][0] = "yellow";
+  groundBoard[11][1] = "yellow";
+  groundBoard[11][2] = "yellow";
+  groundBoard[10][4] = "purple";
+  groundBoard[11][4] = "purple";
+
+  const target = predictGrowthTarget(
+    groundBoard,
+    undergroundBoard,
+    { colors: ["pink", "yellow"], x: 4, y: 1, rotation: 3 },
+  );
+
+  assert.deepEqual(target, { column: 3, row: 5, sourceX: 3, sourceY: 11 });
 });
 
 test("growth pauses input until its matching animation finishes", () => {

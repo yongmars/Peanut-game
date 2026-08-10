@@ -272,9 +272,25 @@ export function hardDropPair(board: GroundBoard, pair: ActivePair): ActivePair {
   return dropped;
 }
 
-function lockPair(board: GroundBoard, pair: ActivePair): GroundBoard {
+export function getLandedPairCells(
+  board: GroundBoard,
+  pair: ActivePair,
+): PairCell[] {
+  const cells = getPairCells(pair);
+  if (pair.rotation === 0 || pair.rotation === 2) return cells;
+
+  return cells.map((cell) => {
+    let y = cell.y;
+    while (y + 1 < GROUND_ROWS && board[y + 1][cell.x] === null) {
+      y += 1;
+    }
+    return { ...cell, y };
+  });
+}
+
+function lockPairCells(board: GroundBoard, cells: PairCell[]): GroundBoard {
   const locked = board.map((row) => [...row]);
-  getPairCells(pair).forEach(({ x, y, color }) => {
+  cells.forEach(({ x, y, color }) => {
     locked[y][x] = color;
   });
   return locked;
@@ -328,9 +344,9 @@ export function predictGrowthTarget(
 ): GrowthTarget | null {
   if (!activePair) return null;
   const dropped = hardDropPair(groundBoard, activePair);
-  const landedCells = getPairCells(dropped);
+  const landedCells = getLandedPairCells(groundBoard, dropped);
   const resolved = resolveAfterLanding(
-    lockPair(groundBoard, dropped),
+    lockPairCells(groundBoard, landedCells),
     landedCells,
   );
   return selectGrowthTarget(
@@ -389,8 +405,8 @@ function finishTurn(
 }
 
 function settlePair(state: GameState, pair: ActivePair): GameState {
-  const landedCells = getPairCells(pair);
-  const lockedBoard = lockPair(state.groundBoard, pair);
+  const landedCells = getLandedPairCells(state.groundBoard, pair);
+  const lockedBoard = lockPairCells(state.groundBoard, landedCells);
   const resolved = resolveAfterLanding(
     lockedBoard,
     landedCells,
