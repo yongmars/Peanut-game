@@ -225,7 +225,14 @@ export function RakaseiGame() {
           </div>
         </div>
 
-        <div className="earth-line" aria-hidden="true" />
+        <div className="earth-line" aria-hidden="true">
+          <img
+            className="leaf-border"
+            src={GAME_ASSETS.leafBorder}
+            alt=""
+            draggable={false}
+          />
+        </div>
 
         <div className="field-soil" aria-label="地下 6列6段 落花生エリア">
           <div className="underground-grid">
