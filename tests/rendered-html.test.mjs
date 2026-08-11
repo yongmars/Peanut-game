@@ -25,6 +25,9 @@ test("server-renders the title screen before the game starts", async () => {
   assert.match(html, /BEST HARVEST[\s\S]*0/);
   assert.match(html, /あそぶ/);
   assert.match(html, /peanutboy\.png/);
+  assert.match(html, /peanutgame_music\.mp3/);
+  assert.match(html, /BGM[\s\S]*ON/);
+  assert.match(html, /aria-pressed="true"/);
   assert.doesNotMatch(html, /ゲームフィールド|ゲーム操作|高速落下/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

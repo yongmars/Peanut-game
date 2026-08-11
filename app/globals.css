@@ -183,6 +183,55 @@ button {
   user-select: none;
 }
 
+.bgm-player {
+  display: none;
+}
+
+.music-toggle {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border: 1px solid #d5b88f;
+  border-radius: 999px;
+  color: #715d48;
+  background: rgb(255 253 247 / 90%);
+  box-shadow: 0 2px 0 #c5a477;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.music-toggle > span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.music-toggle small {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.music-toggle--compact {
+  width: 25px;
+  min-width: 25px;
+  height: 25px;
+  min-height: 25px;
+  flex: none;
+  padding: 0;
+}
+
+.music-toggle--compact > span {
+  font-size: 15px;
+}
+
+.music-toggle:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #c5a477;
+}
+
 .hud {
   width: min(100%, 360px);
   height: 38px;
@@ -251,6 +300,8 @@ button {
 
 .hud__next {
   justify-content: space-between;
+  gap: 3px;
+  padding-inline: 5px;
 }
 
 .hud__label {
@@ -748,7 +799,8 @@ button {
 
 .control-button:focus-visible,
 .gameover button:focus-visible,
-.title-screen__play:focus-visible {
+.title-screen__play:focus-visible,
+.music-toggle:focus-visible {
   outline: 3px solid #3e86b4;
   outline-offset: 2px;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useReducer,
@@ -31,6 +32,13 @@ import {
   saveBestRecordUpdate,
   type BestRecords,
 } from "./best-records";
+import {
+  BGM_ASSETS,
+  BGM_SETTINGS,
+  getBgmTrackForLevel,
+  parseBgmEnabled,
+  type BgmTrack,
+} from "./bgm";
 
 const LEVEL_UP_DISPLAY_MS = 1_200;
 
@@ -54,6 +62,29 @@ function Flower({ color, small = false }: { color: FlowerColor; small?: boolean 
 
 function GroundCell({ flower }: { flower: GroundCellData }) {
   return <div className="field-cell">{flower && <Flower color={flower} />}</div>;
+}
+
+function MusicToggle({
+  enabled,
+  onToggle,
+  compact = false,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`music-toggle${compact ? " music-toggle--compact" : ""}`}
+      aria-label={`BGMを${enabled ? "オフ" : "オン"}にする`}
+      aria-pressed={enabled}
+      onClick={onToggle}
+    >
+      <span aria-hidden="true">♪</span>
+      {!compact && <small>BGM {enabled ? "ON" : "OFF"}</small>}
+    </button>
+  );
 }
 
 function PeanutPiece({
@@ -118,8 +149,12 @@ export function RakaseiGame() {
   );
   const touchStart = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const previousHarvestCount = useRef(state.harvestCount);
+  const musicPlayer = useRef<HTMLAudioElement | null>(null);
+  const musicFadeTimer = useRef<number | null>(null);
   const [levelUpDisplay, setLevelUpDisplay] = useState<number | null>(null);
   const [screenState, setScreenState] = useState<ScreenState>("title");
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [currentTrack, setCurrentTrack] = useState<BgmTrack>("normal");
   const [bestRecords, setBestRecords] = useState<BestRecords>({
     score: 0,
     harvest: 0,
@@ -129,6 +164,21 @@ export function RakaseiGame() {
     harvest: false,
   });
   const levelSetting = getLevelSetting(state.harvestCount);
+
+  const clearMusicFade = useCallback(() => {
+    if (musicFadeTimer.current === null) return;
+    window.clearInterval(musicFadeTimer.current);
+    musicFadeTimer.current = null;
+  }, []);
+
+  const stopMusic = useCallback(() => {
+    clearMusicFade();
+    const audio = musicPlayer.current;
+    if (!audio) return;
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = BGM_SETTINGS.volume;
+  }, [clearMusicFade]);
 
   const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
     if (
@@ -171,6 +221,11 @@ export function RakaseiGame() {
     const timer = window.setTimeout(() => {
       try {
         setBestRecords(loadBestRecords(window.localStorage));
+        setMusicEnabled(
+          parseBgmEnabled(
+            window.localStorage.getItem(BGM_SETTINGS.storageKey),
+          ),
+        );
       } catch {
         // Storage can be unavailable in privacy-restricted environments.
       }
@@ -195,6 +250,8 @@ export function RakaseiGame() {
         score: update.scoreUpdated,
         harvest: update.harvestUpdated,
       });
+      stopMusic();
+      setCurrentTrack("normal");
       setScreenState("gameOver");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -204,6 +261,73 @@ export function RakaseiGame() {
     state.gameStatus,
     state.harvestCount,
     state.score,
+    stopMusic,
+  ]);
+
+  useEffect(() => {
+    const audio = musicPlayer.current;
+    if (!audio || screenState !== "playing") return;
+
+    clearMusicFade();
+    if (!musicEnabled) {
+      audio.pause();
+      return;
+    }
+
+    const source = BGM_ASSETS[currentTrack];
+    if (audio.getAttribute("src") !== source) {
+      audio.src = source;
+      audio.load();
+    }
+    audio.volume = 0;
+    void audio.play().then(() => {
+      const steps = Math.max(1, Math.round(BGM_SETTINGS.fadeMs / 25));
+      let step = 0;
+      musicFadeTimer.current = window.setInterval(() => {
+        step += 1;
+        audio.volume = Math.min(
+          BGM_SETTINGS.volume,
+          BGM_SETTINGS.volume * (step / steps),
+        );
+        if (step >= steps) clearMusicFade();
+      }, BGM_SETTINGS.fadeMs / steps);
+    }).catch(() => {
+      audio.volume = BGM_SETTINGS.volume;
+    });
+
+    return clearMusicFade;
+  }, [clearMusicFade, currentTrack, musicEnabled, screenState]);
+
+  useEffect(() => {
+    if (screenState !== "playing" || !musicEnabled) return;
+    const nextTrack = getBgmTrackForLevel(levelSetting.level);
+    if (nextTrack === currentTrack) return;
+
+    const audio = musicPlayer.current;
+    if (!audio) return;
+    clearMusicFade();
+    const startVolume = audio.volume;
+    const steps = Math.max(1, Math.round(BGM_SETTINGS.fadeMs / 25));
+    let step = 0;
+    musicFadeTimer.current = window.setInterval(() => {
+      step += 1;
+      audio.volume = Math.max(0, startVolume * (1 - step / steps));
+      if (step < steps) return;
+      clearMusicFade();
+      audio.pause();
+      audio.src = BGM_ASSETS[nextTrack];
+      audio.currentTime = 0;
+      audio.load();
+      setCurrentTrack(nextTrack);
+    }, BGM_SETTINGS.fadeMs / steps);
+
+    return clearMusicFade;
+  }, [
+    clearMusicFade,
+    currentTrack,
+    levelSetting.level,
+    musicEnabled,
+    screenState,
   ]);
 
   useEffect(() => {
@@ -347,7 +471,35 @@ export function RakaseiGame() {
     [state.growthEffect],
   );
 
+  const toggleMusic = () => {
+    const nextEnabled = !musicEnabled;
+    setMusicEnabled(nextEnabled);
+    try {
+      window.localStorage.setItem(
+        BGM_SETTINGS.storageKey,
+        String(nextEnabled),
+      );
+    } catch {
+      // The in-memory setting still works when storage is unavailable.
+    }
+    if (!nextEnabled) {
+      clearMusicFade();
+      musicPlayer.current?.pause();
+    }
+  };
+
   const startNewGame = () => {
+    clearMusicFade();
+    setCurrentTrack("normal");
+    const audio = musicPlayer.current;
+    if (audio) {
+      audio.pause();
+      audio.src = BGM_ASSETS.normal;
+      audio.currentTime = 0;
+      audio.volume = 0;
+      audio.load();
+      if (musicEnabled) void audio.play().catch(() => undefined);
+    }
     dispatch({ type: "RESET" });
     previousHarvestCount.current = 0;
     setLevelUpDisplay(null);
@@ -355,15 +507,37 @@ export function RakaseiGame() {
     setScreenState("playing");
   };
 
+  const returnToTitle = () => {
+    stopMusic();
+    setCurrentTrack("normal");
+    setScreenState("title");
+  };
+
+  const bgmPlayer = (
+    // This audio element contains background music only, with no speech to caption.
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <audio
+      key="bgm-player"
+      ref={musicPlayer}
+      className="bgm-player"
+      src={BGM_ASSETS[currentTrack]}
+      preload="auto"
+      loop
+      data-bgm-track={currentTrack}
+    />
+  );
+
   if (screenState === "title") {
     return (
-      <main
-        className="title-screen"
-        style={{
-          "--field-background-image": `url("${GAME_ASSETS.background}")`,
-        } as GameShellStyle}
-      >
-        <section className="title-screen__content" aria-labelledby="title-logo">
+      <>
+        {bgmPlayer}
+        <main
+          className="title-screen"
+          style={{
+            "--field-background-image": `url("${GAME_ASSETS.background}")`,
+          } as GameShellStyle}
+        >
+          <section className="title-screen__content" aria-labelledby="title-logo">
           <img
             id="title-logo"
             className="title-screen__logo"
@@ -382,6 +556,7 @@ export function RakaseiGame() {
               <strong><span aria-hidden="true">🥜</span> × {bestRecords.harvest}</strong>
             </p>
           </div>
+          <MusicToggle enabled={musicEnabled} onToggle={toggleMusic} />
           <button
             type="button"
             className="title-screen__play"
@@ -395,19 +570,22 @@ export function RakaseiGame() {
             alt="落花生のマスコット"
             draggable={false}
           />
-        </section>
-      </main>
+          </section>
+        </main>
+      </>
     );
   }
 
   return (
-    <main
-      className="game-shell"
-      style={{
-        "--field-background-image": `url("${GAME_ASSETS.background}")`,
-        "--level-up-display-duration": `${LEVEL_UP_DISPLAY_MS}ms`,
-      } as GameShellStyle}
-    >
+    <>
+      {bgmPlayer}
+      <main
+        className="game-shell"
+        style={{
+          "--field-background-image": `url("${GAME_ASSETS.background}")`,
+          "--level-up-display-duration": `${LEVEL_UP_DISPLAY_MS}ms`,
+        } as GameShellStyle}
+      >
       <header className="hud" aria-label="ゲーム情報">
         <section className="hud__score" aria-label={`スコア ${state.score}`}>
           <span className="hud__label">SCORE</span>
@@ -433,6 +611,11 @@ export function RakaseiGame() {
             <Flower color={state.nextPair[0]} small />
             <Flower color={state.nextPair[1]} small />
           </div>
+          <MusicToggle
+            enabled={musicEnabled}
+            onToggle={toggleMusic}
+            compact
+          />
         </section>
       </header>
 
@@ -589,7 +772,7 @@ export function RakaseiGame() {
                 <button
                   type="button"
                   className="gameover__title-button"
-                  onClick={() => setScreenState("title")}
+                  onClick={returnToTitle}
                 >
                   タイトルへ
                 </button>
@@ -616,6 +799,7 @@ export function RakaseiGame() {
       </nav>
 
       <p className="keyboard-hint">← → 移動 ・ ↑ / X 回転 ・ SPACE 高速落下</p>
-    </main>
+      </main>
+    </>
   );
 }
