@@ -14,6 +14,7 @@ export const GAME_ASSETS = {
     happy: "/peanut_happy.webp",
   },
   background: "/background.png",
+  title: "/title.png",
   leafBorder: "/leaf-border.webp",
   mascot: "/peanutboy.png",
 } as const;

@@ -13,22 +13,18 @@ async function render() {
   );
 }
 
-test("server-renders the Phase 4 game screen", async () => {
+test("server-renders the title screen before the game starts", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
 
   assert.match(html, /<title>らっかせい！/);
-  assert.match(html, /SCORE/);
-  assert.match(html, /LEVEL[\s\S]*1/);
-  assert.match(html, /NEXT/);
-  assert.match(html, /SCORE[\s\S]*LEVEL[\s\S]*収穫[\s\S]*NEXT/);
-  assert.doesNotMatch(html, /mini-logo|harvest-count/);
-  assert.match(html, /leaf-border\.webp/);
-  assert.match(html, /地上 6列12段/);
-  assert.match(html, /地下 6列6段/);
-  assert.match(html, /落花生エリア/);
-  assert.match(html, /収穫/);
-  assert.match(html, /高速落下/);
+  assert.match(html, /title\.png/);
+  assert.match(html, /花をつなげて、地中でポコッ！/);
+  assert.match(html, /BEST SCORE[\s\S]*0/);
+  assert.match(html, /BEST HARVEST[\s\S]*0/);
+  assert.match(html, /あそぶ/);
+  assert.match(html, /peanutboy\.png/);
+  assert.doesNotMatch(html, /ゲームフィールド|ゲーム操作|高速落下/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

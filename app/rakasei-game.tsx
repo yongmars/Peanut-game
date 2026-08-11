@@ -25,6 +25,12 @@ import {
 } from "./game-logic";
 import { FLOWER_ASSETS, GAME_ASSETS, getPeanutAsset } from "./game-assets";
 import { getTouchGesture } from "./touch-controls";
+import {
+  getBestRecordUpdate,
+  loadBestRecords,
+  saveBestRecordUpdate,
+  type BestRecords,
+} from "./best-records";
 
 const LEVEL_UP_DISPLAY_MS = 1_200;
 
@@ -86,7 +92,14 @@ type GrowthStyle = CSSProperties & {
 
 type GameShellStyle = CSSProperties & {
   "--field-background-image": string;
-  "--level-up-display-duration": string;
+  "--level-up-display-duration"?: string;
+};
+
+type ScreenState = "title" | "playing" | "gameOver";
+
+type BestUpdateFlags = {
+  score: boolean;
+  harvest: boolean;
 };
 
 function getGrowthStyle(target: Pick<GrowthTarget, "column" | "sourceY" | "row">): GrowthStyle {
@@ -106,10 +119,20 @@ export function RakaseiGame() {
   const touchStart = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const previousHarvestCount = useRef(state.harvestCount);
   const [levelUpDisplay, setLevelUpDisplay] = useState<number | null>(null);
+  const [screenState, setScreenState] = useState<ScreenState>("title");
+  const [bestRecords, setBestRecords] = useState<BestRecords>({
+    score: 0,
+    harvest: 0,
+  });
+  const [bestUpdates, setBestUpdates] = useState<BestUpdateFlags>({
+    score: false,
+    harvest: false,
+  });
   const levelSetting = getLevelSetting(state.harvestCount);
 
   const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
     if (
+      screenState !== "playing" ||
       state.gameStatus !== "playing" ||
       event.pointerType !== "touch" ||
       !event.isPrimary
@@ -125,6 +148,7 @@ export function RakaseiGame() {
   const handleTouchEnd = (event: ReactPointerEvent<HTMLElement>) => {
     const start = touchStart.current;
     if (
+      screenState !== "playing" ||
       state.gameStatus !== "playing" ||
       event.pointerType !== "touch" ||
       !start ||
@@ -143,12 +167,53 @@ export function RakaseiGame() {
   };
 
   useEffect(() => {
+    if (screenState !== "title") return;
+    const timer = window.setTimeout(() => {
+      try {
+        setBestRecords(loadBestRecords(window.localStorage));
+      } catch {
+        // Storage can be unavailable in privacy-restricted environments.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [screenState]);
+
+  useEffect(() => {
+    if (screenState !== "playing" || state.gameStatus !== "gameover") return;
+    const timer = window.setTimeout(() => {
+      const update = getBestRecordUpdate(bestRecords, {
+        score: state.score,
+        harvest: state.harvestCount,
+      });
+      try {
+        saveBestRecordUpdate(window.localStorage, update);
+      } catch {
+        // The current result screen still works when storage is unavailable.
+      }
+      setBestRecords({ score: update.score, harvest: update.harvest });
+      setBestUpdates({
+        score: update.scoreUpdated,
+        harvest: update.harvestUpdated,
+      });
+      setScreenState("gameOver");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    bestRecords,
+    screenState,
+    state.gameStatus,
+    state.harvestCount,
+    state.score,
+  ]);
+
+  useEffect(() => {
+    if (screenState !== "playing") return;
     const timer = window.setInterval(
       () => dispatch({ type: "TICK" }),
       levelSetting.dropIntervalMs,
     );
     return () => window.clearInterval(timer);
-  }, [levelSetting.dropIntervalMs]);
+  }, [levelSetting.dropIntervalMs, screenState]);
 
   useEffect(() => {
     const levelUp = getLevelUpLevel(
@@ -212,6 +277,7 @@ export function RakaseiGame() {
   }, [state.pendingResolution]);
 
   useEffect(() => {
+    if (screenState !== "playing") return;
     const onKeyDown = (event: KeyboardEvent) => {
       const controls: Record<string, () => void> = {
         ArrowLeft: () => dispatch({ type: "MOVE", dx: -1 }),
@@ -230,7 +296,7 @@ export function RakaseiGame() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [screenState]);
 
   const displayBoard = useMemo(() => {
     const board = state.groundBoard.map((row) => [...row]);
@@ -280,6 +346,59 @@ export function RakaseiGame() {
       ),
     [state.growthEffect],
   );
+
+  const startNewGame = () => {
+    dispatch({ type: "RESET" });
+    previousHarvestCount.current = 0;
+    setLevelUpDisplay(null);
+    setBestUpdates({ score: false, harvest: false });
+    setScreenState("playing");
+  };
+
+  if (screenState === "title") {
+    return (
+      <main
+        className="title-screen"
+        style={{
+          "--field-background-image": `url("${GAME_ASSETS.background}")`,
+        } as GameShellStyle}
+      >
+        <section className="title-screen__content" aria-labelledby="title-logo">
+          <img
+            id="title-logo"
+            className="title-screen__logo"
+            src={GAME_ASSETS.title}
+            alt="らっかせい！"
+            draggable={false}
+          />
+          <p className="title-screen__tagline">花をつなげて、地中でポコッ！</p>
+          <div className="title-screen__records" aria-label="ベスト記録">
+            <p>
+              <span>BEST SCORE</span>
+              <strong>{bestRecords.score.toLocaleString("ja-JP")}</strong>
+            </p>
+            <p>
+              <span>BEST HARVEST</span>
+              <strong><span aria-hidden="true">🥜</span> × {bestRecords.harvest}</strong>
+            </p>
+          </div>
+          <button
+            type="button"
+            className="title-screen__play"
+            onClick={startNewGame}
+          >
+            あそぶ
+          </button>
+          <img
+            className="title-screen__mascot"
+            src={GAME_ASSETS.mascot}
+            alt="落花生のマスコット"
+            draggable={false}
+          />
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main
@@ -435,22 +554,46 @@ export function RakaseiGame() {
           {state.growthEffect ? "地下に落花生ができました" : ""}
         </span>
 
-        {state.gameStatus === "gameover" && (
+        {screenState === "gameOver" && (
           <div className="gameover" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
             <div className="gameover__panel">
-              <h1 id="gameover-title">ゲームオーバー</h1>
-              <div className="gameover__result">
+              <div className="gameover__heading">
                 <img
                   className="gameover__mascot"
                   src={GAME_ASSETS.mascot}
-                  alt="らっかせいのマスコット"
+                  alt="落花生のマスコット"
                   draggable={false}
                 />
-                <p>SCORE <strong>{state.score.toLocaleString("ja-JP")}</strong></p>
+                <h1 id="gameover-title">おしまい！</h1>
               </div>
-              <button type="button" onClick={() => dispatch({ type: "RESET" })}>
-                もういちど
-              </button>
+              <div className="gameover__results">
+                <p>
+                  <span>今日の収穫</span>
+                  <strong><span aria-hidden="true">🥜</span> × {state.harvestCount}</strong>
+                </p>
+                <p>
+                  <span>SCORE</span>
+                  <strong>{state.score.toLocaleString("ja-JP")}</strong>
+                </p>
+              </div>
+              {(bestUpdates.score || bestUpdates.harvest) && (
+                <div className="gameover__updates" aria-live="polite">
+                  {bestUpdates.score && <span>ベストスコア更新！</span>}
+                  {bestUpdates.harvest && <span>ベスト収穫更新！</span>}
+                </div>
+              )}
+              <div className="gameover__actions">
+                <button type="button" onClick={startNewGame}>
+                  もういちど
+                </button>
+                <button
+                  type="button"
+                  className="gameover__title-button"
+                  onClick={() => setScreenState("title")}
+                >
+                  タイトルへ
+                </button>
+              </div>
             </div>
           </div>
         )}

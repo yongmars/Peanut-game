@@ -19,6 +19,7 @@ test("formal field, peanut, and mascot assets use their public paths", () => {
   assert.equal(GAME_ASSETS.peanut.normal, "/peanut_normal.webp");
   assert.equal(GAME_ASSETS.peanut.happy, "/peanut_happy.webp");
   assert.equal(GAME_ASSETS.background, "/background.png");
+  assert.equal(GAME_ASSETS.title, "/title.png");
   assert.equal(GAME_ASSETS.leafBorder, "/leaf-border.webp");
   assert.equal(GAME_ASSETS.mascot, "/peanutboy.png");
   assert.equal(getPeanutAsset(false), "/peanut_normal.webp");
