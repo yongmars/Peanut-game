@@ -39,6 +39,12 @@ import {
   parseBgmEnabled,
   type BgmTrack,
 } from "./bgm";
+import { parseTutorialSeen, TUTORIAL_STORAGE_KEY } from "./tutorial";
+import { shouldAutoPause } from "./pause-state";
+import {
+  usePausableInterval,
+  usePausableTimeout,
+} from "./use-pausable-timer";
 
 const LEVEL_UP_DISPLAY_MS = 1_200;
 
@@ -68,10 +74,12 @@ function MusicToggle({
   enabled,
   onToggle,
   compact = false,
+  disabled = false,
 }: {
   enabled: boolean;
   onToggle: () => void;
   compact?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -80,6 +88,7 @@ function MusicToggle({
       aria-label={`BGMを${enabled ? "オフ" : "オン"}にする`}
       aria-pressed={enabled}
       onClick={onToggle}
+      disabled={disabled}
     >
       <span aria-hidden="true">♪</span>
       {!compact && <small>BGM {enabled ? "ON" : "OFF"}</small>}
@@ -126,7 +135,9 @@ type GameShellStyle = CSSProperties & {
   "--level-up-display-duration"?: string;
 };
 
-type ScreenState = "title" | "playing" | "gameOver";
+type ScreenState = "title" | "tutorial" | "playing" | "paused" | "gameOver";
+type TutorialReturn = "title" | "startGame";
+type PauseConfirmation = "restart" | "title" | null;
 
 type BestUpdateFlags = {
   score: boolean;
@@ -155,6 +166,9 @@ export function RakaseiGame() {
   const [screenState, setScreenState] = useState<ScreenState>("title");
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [currentTrack, setCurrentTrack] = useState<BgmTrack>("normal");
+  const [tutorialSeen, setTutorialSeen] = useState(false);
+  const [tutorialReturn, setTutorialReturn] = useState<TutorialReturn>("title");
+  const [pauseConfirmation, setPauseConfirmation] = useState<PauseConfirmation>(null);
   const [bestRecords, setBestRecords] = useState<BestRecords>({
     score: 0,
     harvest: 0,
@@ -179,6 +193,20 @@ export function RakaseiGame() {
     audio.currentTime = 0;
     audio.volume = BGM_SETTINGS.volume;
   }, [clearMusicFade]);
+
+  const pauseGame = useCallback(() => {
+    if (screenState !== "playing" || state.gameStatus !== "playing") return;
+    touchStart.current = null;
+    clearMusicFade();
+    musicPlayer.current?.pause();
+    setPauseConfirmation(null);
+    setScreenState("paused");
+  }, [clearMusicFade, screenState, state.gameStatus]);
+
+  const resumeGame = () => {
+    setPauseConfirmation(null);
+    setScreenState("playing");
+  };
 
   const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
     if (
@@ -226,12 +254,25 @@ export function RakaseiGame() {
             window.localStorage.getItem(BGM_SETTINGS.storageKey),
           ),
         );
+        setTutorialSeen(
+          parseTutorialSeen(
+            window.localStorage.getItem(TUTORIAL_STORAGE_KEY),
+          ),
+        );
       } catch {
         // Storage can be unavailable in privacy-restricted environments.
       }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [screenState]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (shouldAutoPause(screenState, document.visibilityState)) pauseGame();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [pauseGame, screenState]);
 
   useEffect(() => {
     if (screenState !== "playing" || state.gameStatus !== "gameover") return;
@@ -330,14 +371,11 @@ export function RakaseiGame() {
     screenState,
   ]);
 
-  useEffect(() => {
-    if (screenState !== "playing") return;
-    const timer = window.setInterval(
-      () => dispatch({ type: "TICK" }),
-      levelSetting.dropIntervalMs,
-    );
-    return () => window.clearInterval(timer);
-  }, [levelSetting.dropIntervalMs, screenState]);
+  usePausableInterval(
+    () => dispatch({ type: "TICK" }),
+    levelSetting.dropIntervalMs,
+    screenState === "playing",
+  );
 
   useEffect(() => {
     const levelUp = getLevelUpLevel(
@@ -353,52 +391,61 @@ export function RakaseiGame() {
     }
 
     const showTimer = window.setTimeout(() => setLevelUpDisplay(levelUp), 0);
-    const hideTimer = window.setTimeout(
-      () => setLevelUpDisplay(null),
-      LEVEL_UP_DISPLAY_MS,
-    );
     return () => {
       window.clearTimeout(showTimer);
-      window.clearTimeout(hideTimer);
     };
   }, [state.harvestCount]);
 
-  useEffect(() => {
-    if (!state.growthEffect) return;
-    const id = state.growthEffect.id;
-    const longestBatch = Math.max(
-      ...state.growthEffect.batches.map(({ rows }) => rows.length),
-    );
-    const timer = window.setTimeout(
-      () => dispatch({ type: "FINISH_GROWTH", id }),
-      650 + Math.max(0, longestBatch - 1) * 140,
-    );
-    return () => window.clearTimeout(timer);
-  }, [state.growthEffect]);
+  usePausableTimeout(
+    () => setLevelUpDisplay(null),
+    LEVEL_UP_DISPLAY_MS,
+    screenState === "playing" && levelUpDisplay !== null,
+    levelUpDisplay,
+  );
 
-  useEffect(() => {
-    if (!state.harvestEffect) return;
-    const id = state.harvestEffect.id;
-    const timer = window.setTimeout(
-      () => dispatch({ type: "FINISH_HARVEST", id }),
-      520,
-    );
-    return () => window.clearTimeout(timer);
-  }, [state.harvestEffect]);
+  const growthDelayMs = state.growthEffect
+    ? 650 + Math.max(
+      0,
+      Math.max(...state.growthEffect.batches.map(({ rows }) => rows.length)) - 1,
+    ) * 140
+    : 0;
+  usePausableTimeout(
+    () => {
+      if (state.growthEffect) {
+        dispatch({ type: "FINISH_GROWTH", id: state.growthEffect.id });
+      }
+    },
+    growthDelayMs,
+    screenState === "playing" && Boolean(state.growthEffect),
+    state.growthEffect?.id ?? null,
+  );
 
-  useEffect(() => {
-    if (
-      !state.pendingResolution ||
-      state.pendingResolution.phase === "growth" ||
-      state.pendingResolution.phase === "harvest"
-    ) return;
-    const { id, phase } = state.pendingResolution;
-    const timer = window.setTimeout(
-      () => dispatch({ type: "ADVANCE_RESOLUTION", id }),
-      phase === "clear" ? 450 : 320,
-    );
-    return () => window.clearTimeout(timer);
-  }, [state.pendingResolution]);
+  usePausableTimeout(
+    () => {
+      if (state.harvestEffect) {
+        dispatch({ type: "FINISH_HARVEST", id: state.harvestEffect.id });
+      }
+    },
+    520,
+    screenState === "playing" && Boolean(state.harvestEffect),
+    state.harvestEffect?.id ?? null,
+  );
+
+  const resolutionTimer = state.pendingResolution &&
+    state.pendingResolution.phase !== "growth" &&
+    state.pendingResolution.phase !== "harvest"
+      ? state.pendingResolution
+      : null;
+  usePausableTimeout(
+    () => {
+      if (resolutionTimer) {
+        dispatch({ type: "ADVANCE_RESOLUTION", id: resolutionTimer.id });
+      }
+    },
+    resolutionTimer?.phase === "clear" ? 450 : 320,
+    screenState === "playing" && resolutionTimer !== null,
+    resolutionTimer ? `${resolutionTimer.id}:${resolutionTimer.phase}` : null,
+  );
 
   useEffect(() => {
     if (screenState !== "playing") return;
@@ -504,12 +551,42 @@ export function RakaseiGame() {
     previousHarvestCount.current = 0;
     setLevelUpDisplay(null);
     setBestUpdates({ score: false, harvest: false });
+    setPauseConfirmation(null);
     setScreenState("playing");
   };
 
   const returnToTitle = () => {
     stopMusic();
     setCurrentTrack("normal");
+    setPauseConfirmation(null);
+    setScreenState("title");
+  };
+
+  const handlePlay = () => {
+    if (tutorialSeen) {
+      startNewGame();
+      return;
+    }
+    setTutorialReturn("startGame");
+    setScreenState("tutorial");
+  };
+
+  const openTutorial = () => {
+    setTutorialReturn("title");
+    setScreenState("tutorial");
+  };
+
+  const completeTutorial = () => {
+    setTutorialSeen(true);
+    try {
+      window.localStorage.setItem(TUTORIAL_STORAGE_KEY, "true");
+    } catch {
+      // The tutorial can still be completed when storage is unavailable.
+    }
+    if (tutorialReturn === "startGame") {
+      startNewGame();
+      return;
+    }
     setScreenState("title");
   };
 
@@ -526,6 +603,72 @@ export function RakaseiGame() {
       data-bgm-track={currentTrack}
     />
   );
+
+  if (screenState === "tutorial") {
+    return (
+      <>
+        {bgmPlayer}
+        <main
+          className="tutorial-screen"
+          style={{
+            "--field-background-image": `url("${GAME_ASSETS.background}")`,
+          } as GameShellStyle}
+        >
+          <section className="tutorial-panel" aria-labelledby="tutorial-title">
+            <header className="tutorial-panel__heading">
+              <img src={GAME_ASSETS.mascot} alt="" draggable={false} />
+              <div>
+                <span>HOW TO PLAY</span>
+                <h1 id="tutorial-title">あそびかた</h1>
+              </div>
+            </header>
+
+            <ol className="tutorial-rules">
+              <li>
+                <div className="tutorial-icon tutorial-icon--flowers" aria-hidden="true">
+                  {Object.values(FLOWER_ASSETS).map((asset) => (
+                    <img src={asset} alt="" draggable={false} key={asset} />
+                  ))}
+                </div>
+                <div><strong>① 花をつなげよう</strong><p>同じ色を上下左右に4つ以上つなげると消えるよ。</p></div>
+              </li>
+              <li>
+                <div className="tutorial-icon" aria-hidden="true">
+                  <img src={GAME_ASSETS.peanut.normal} alt="" draggable={false} />
+                </div>
+                <div><strong>② 連鎖で落花生！</strong><p>1連鎖 🥜×1 / 2連鎖 🥜×2 / 3連鎖 🥜×3</p></div>
+              </li>
+              <li>
+                <div className="tutorial-icon" aria-hidden="true">
+                  <img src={GAME_ASSETS.peanut.happy} alt="" draggable={false} />
+                </div>
+                <div><strong>③ 地下で収穫！</strong><p>落花生を上下左右に3つ以上つなげて収穫しよう。</p></div>
+              </li>
+              <li>
+                <div className="tutorial-icon tutorial-icon--level" aria-hidden="true">LEVEL<br />UP!</div>
+                <div><strong>④ だんだんスピードアップ！</strong><p>収穫が増えるとLEVELが上がり、落下が速くなるよ。</p></div>
+              </li>
+            </ol>
+
+            <section className="tutorial-controls" aria-label="操作方法">
+              <strong>操作方法</strong>
+              <div>
+                <span>タップ：回転</span>
+                <span>左右スワイプ：移動</span>
+                <span>下スワイプ：高速落下</span>
+                <span>上スワイプ：操作なし</span>
+              </div>
+              <small>画面下のボタンでも操作できます。</small>
+            </section>
+
+            <button type="button" className="tutorial-panel__done" onClick={completeTutorial}>
+              わかった！
+            </button>
+          </section>
+        </main>
+      </>
+    );
+  }
 
   if (screenState === "title") {
     return (
@@ -556,11 +699,14 @@ export function RakaseiGame() {
               <strong><span aria-hidden="true">🥜</span> × {bestRecords.harvest}</strong>
             </p>
           </div>
-          <MusicToggle enabled={musicEnabled} onToggle={toggleMusic} />
+          <div className="title-screen__secondary-actions">
+            <MusicToggle enabled={musicEnabled} onToggle={toggleMusic} />
+            <button type="button" onClick={openTutorial}>あそびかた</button>
+          </div>
           <button
             type="button"
             className="title-screen__play"
-            onClick={startNewGame}
+            onClick={handlePlay}
           >
             あそぶ
           </button>
@@ -580,7 +726,7 @@ export function RakaseiGame() {
     <>
       {bgmPlayer}
       <main
-        className="game-shell"
+        className={`game-shell${screenState === "paused" ? " game-shell--paused" : ""}`}
         style={{
           "--field-background-image": `url("${GAME_ASSETS.background}")`,
           "--level-up-display-duration": `${LEVEL_UP_DISPLAY_MS}ms`,
@@ -611,11 +757,23 @@ export function RakaseiGame() {
             <Flower color={state.nextPair[0]} small />
             <Flower color={state.nextPair[1]} small />
           </div>
+        </section>
+        <section className="hud__actions" aria-label="ゲーム設定">
           <MusicToggle
             enabled={musicEnabled}
             onToggle={toggleMusic}
             compact
+            disabled={screenState !== "playing"}
           />
+          <button
+            type="button"
+            className="pause-button"
+            aria-label="一時停止"
+            onClick={pauseGame}
+            disabled={screenState !== "playing" || state.gameStatus !== "playing"}
+          >
+            <span aria-hidden="true">⏸</span>
+          </button>
         </section>
       </header>
 
@@ -784,19 +942,54 @@ export function RakaseiGame() {
       </div>
 
       <nav className="controls" aria-label="ゲーム操作">
-        <button type="button" className="control-button control-button--arrow" aria-label="左に移動" onClick={() => dispatch({ type: "MOVE", dx: -1 })}>
+        <button type="button" className="control-button control-button--arrow" aria-label="左に移動" disabled={screenState !== "playing"} onClick={() => dispatch({ type: "MOVE", dx: -1 })}>
           <span aria-hidden="true">←</span><small>ひだり</small>
         </button>
-        <button type="button" className="control-button" aria-label="時計回りに回転" onClick={() => dispatch({ type: "ROTATE" })}>
+        <button type="button" className="control-button" aria-label="時計回りに回転" disabled={screenState !== "playing"} onClick={() => dispatch({ type: "ROTATE" })}>
           <span aria-hidden="true">↻</span><small>回転</small>
         </button>
-        <button type="button" className="control-button control-button--drop" aria-label="高速落下" onClick={() => dispatch({ type: "HARD_DROP" })}>
+        <button type="button" className="control-button control-button--drop" aria-label="高速落下" disabled={screenState !== "playing"} onClick={() => dispatch({ type: "HARD_DROP" })}>
           <span aria-hidden="true">⇣</span><small>高速落下</small>
         </button>
-        <button type="button" className="control-button control-button--arrow" aria-label="右に移動" onClick={() => dispatch({ type: "MOVE", dx: 1 })}>
+        <button type="button" className="control-button control-button--arrow" aria-label="右に移動" disabled={screenState !== "playing"} onClick={() => dispatch({ type: "MOVE", dx: 1 })}>
           <span aria-hidden="true">→</span><small>みぎ</small>
         </button>
       </nav>
+
+      {screenState === "paused" && (
+        <div className="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+          <section className="pause-panel">
+            {pauseConfirmation === null ? (
+              <>
+                <img src={GAME_ASSETS.mascot} alt="" draggable={false} />
+                <h1 id="pause-title">いったん休憩</h1>
+                <div className="pause-panel__actions">
+                  <button type="button" onClick={resumeGame}>つづける</button>
+                  <button type="button" className="pause-panel__secondary" onClick={() => setPauseConfirmation("restart")}>はじめから</button>
+                  <button type="button" className="pause-panel__secondary" onClick={() => setPauseConfirmation("title")}>タイトルへ</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h1 id="pause-title">
+                  {pauseConfirmation === "restart"
+                    ? "はじめからやり直しますか？"
+                    : "タイトルへ戻りますか？"}
+                </h1>
+                <div className="pause-panel__confirm-actions">
+                  <button
+                    type="button"
+                    onClick={pauseConfirmation === "restart" ? startNewGame : returnToTitle}
+                  >
+                    {pauseConfirmation === "restart" ? "やり直す" : "タイトルへ"}
+                  </button>
+                  <button type="button" className="pause-panel__secondary" onClick={() => setPauseConfirmation(null)}>キャンセル</button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
 
       <p className="keyboard-hint">← → 移動 ・ ↑ / X 回転 ・ SPACE 高速落下</p>
       </main>
