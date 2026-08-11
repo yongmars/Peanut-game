@@ -68,12 +68,13 @@ button {
   width: min(100%, 360px);
   height: 38px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) max-content max-content minmax(0, 1fr);
   align-items: center;
   gap: 4px;
 }
 
 .hud__score,
+.hud__level,
 .hud__harvest,
 .hud__next {
   height: 36px;
@@ -89,6 +90,7 @@ button {
 }
 
 .hud__score,
+.hud__level,
 .hud__harvest {
   flex-direction: column;
   justify-content: center;
@@ -100,6 +102,17 @@ button {
 }
 
 .hud__score strong {
+  font-size: 15px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud__level {
+  min-width: 45px;
+  padding-inline: 6px;
+}
+
+.hud__level strong {
   font-size: 15px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -357,6 +370,26 @@ button {
   box-shadow: 0 3px 0 #c69031;
 }
 
+.level-up-callout {
+  position: absolute;
+  z-index: 10;
+  top: 42%;
+  left: 50%;
+  padding: 8px 18px 9px;
+  border: 3px solid rgb(255 255 255 / 90%);
+  border-radius: 999px;
+  color: #fffdf4;
+  font-size: clamp(20px, calc(var(--cell-size) * .68), 28px);
+  font-weight: 900;
+  letter-spacing: .08em;
+  white-space: nowrap;
+  background: rgb(219 139 46 / 94%);
+  box-shadow: 0 4px 0 rgb(126 78 29 / 42%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: level-up-message var(--level-up-display-duration) ease-out both;
+}
+
 @keyframes stem-grow {
   0% { opacity: 0; transform: scaleY(0); }
   12% { opacity: 1; }
@@ -398,6 +431,13 @@ button {
   22% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
   78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(-50%, -62%) scale(.96); }
+}
+
+@keyframes level-up-message {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(.75); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  72% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -66%) scale(.96); }
 }
 
 @keyframes chain-pop {
@@ -530,7 +570,7 @@ button {
 @media (max-height: 620px) {
   .game-shell { gap: 2px; }
   .hud { height: 34px; }
-  .hud__score, .hud__harvest, .hud__next { height: 32px; padding-block: 2px; }
+  .hud__score, .hud__level, .hud__harvest, .hud__next { height: 32px; padding-block: 2px; }
   .flower--small { width: 20px; height: 20px; flex-basis: 20px; }
   .controls { height: 44px; }
   .control-button { height: 40px; border-radius: 12px; }
@@ -559,7 +599,8 @@ button {
   }
 
   .chain-callout,
-  .harvest-callout {
+  .harvest-callout,
+  .level-up-callout {
     animation: none;
   }
 

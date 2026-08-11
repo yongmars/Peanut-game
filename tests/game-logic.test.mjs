@@ -18,7 +18,48 @@ import {
   resolveBoard,
   spawnPair,
   HARVEST_SCORE_PER_PEANUT,
+  getLevelSetting,
+  getLevelUpLevel,
+  LEVEL_SETTINGS,
 } from "../app/game-logic.ts";
+
+test("harvest totals select the configured level and automatic drop interval", () => {
+  assert.deepEqual(LEVEL_SETTINGS, [
+    { level: 1, minHarvestCount: 0, dropIntervalMs: 900 },
+    { level: 2, minHarvestCount: 10, dropIntervalMs: 800 },
+    { level: 3, minHarvestCount: 25, dropIntervalMs: 700 },
+    { level: 4, minHarvestCount: 45, dropIntervalMs: 600 },
+    { level: 5, minHarvestCount: 70, dropIntervalMs: 500 },
+  ]);
+
+  const expectations = [
+    [0, 1, 900],
+    [9, 1, 900],
+    [10, 2, 800],
+    [24, 2, 800],
+    [25, 3, 700],
+    [44, 3, 700],
+    [45, 4, 600],
+    [69, 4, 600],
+    [70, 5, 500],
+    [999, 5, 500],
+  ];
+  for (const [harvestCount, level, dropIntervalMs] of expectations) {
+    assert.deepEqual(getLevelSetting(harvestCount), {
+      level,
+      minHarvestCount: LEVEL_SETTINGS[level - 1].minHarvestCount,
+      dropIntervalMs,
+    });
+  }
+});
+
+test("level-up display reports only an increase and skips crossed levels", () => {
+  assert.equal(getLevelUpLevel(9, 10), 2);
+  assert.equal(getLevelUpLevel(9, 25), 3);
+  assert.equal(getLevelUpLevel(24, 24), null);
+  assert.equal(getLevelUpLevel(25, 0), null);
+  assert.equal(getLevelUpLevel(70, 75), null);
+});
 
 test("all four flower colors are available to pair generation", () => {
   assert.deepEqual(FLOWER_COLORS, ["yellow", "pink", "blue", "purple"]);

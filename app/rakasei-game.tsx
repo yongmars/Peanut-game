@@ -5,6 +5,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -12,6 +13,8 @@ import {
   COLS,
   createInitialState,
   gameReducer,
+  getLevelSetting,
+  getLevelUpLevel,
   getPairCells,
   GROUND_ROWS,
   predictGrowthTarget,
@@ -22,6 +25,8 @@ import {
 } from "./game-logic";
 import { FLOWER_ASSETS, GAME_ASSETS, getPeanutAsset } from "./game-assets";
 import { getTouchGesture } from "./touch-controls";
+
+const LEVEL_UP_DISPLAY_MS = 1_200;
 
 const FLOWER_LABELS: Record<FlowerColor, string> = {
   yellow: "黄色",
@@ -81,6 +86,7 @@ type GrowthStyle = CSSProperties & {
 
 type GameShellStyle = CSSProperties & {
   "--field-background-image": string;
+  "--level-up-display-duration": string;
 };
 
 function getGrowthStyle(target: Pick<GrowthTarget, "column" | "sourceY" | "row">): GrowthStyle {
@@ -98,6 +104,9 @@ export function RakaseiGame() {
     () => createInitialState(() => 0),
   );
   const touchStart = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const previousHarvestCount = useRef(state.harvestCount);
+  const [levelUpDisplay, setLevelUpDisplay] = useState<number | null>(null);
+  const levelSetting = getLevelSetting(state.harvestCount);
 
   const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
     if (
@@ -134,9 +143,36 @@ export function RakaseiGame() {
   };
 
   useEffect(() => {
-    const timer = window.setInterval(() => dispatch({ type: "TICK" }), 720);
+    const timer = window.setInterval(
+      () => dispatch({ type: "TICK" }),
+      levelSetting.dropIntervalMs,
+    );
     return () => window.clearInterval(timer);
-  }, []);
+  }, [levelSetting.dropIntervalMs]);
+
+  useEffect(() => {
+    const levelUp = getLevelUpLevel(
+      previousHarvestCount.current,
+      state.harvestCount,
+    );
+    previousHarvestCount.current = state.harvestCount;
+
+    if (levelUp === null) {
+      if (state.harvestCount !== 0) return;
+      const resetTimer = window.setTimeout(() => setLevelUpDisplay(null), 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    const showTimer = window.setTimeout(() => setLevelUpDisplay(levelUp), 0);
+    const hideTimer = window.setTimeout(
+      () => setLevelUpDisplay(null),
+      LEVEL_UP_DISPLAY_MS,
+    );
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, [state.harvestCount]);
 
   useEffect(() => {
     if (!state.growthEffect) return;
@@ -237,12 +273,20 @@ export function RakaseiGame() {
       className="game-shell"
       style={{
         "--field-background-image": `url("${GAME_ASSETS.background}")`,
+        "--level-up-display-duration": `${LEVEL_UP_DISPLAY_MS}ms`,
       } as GameShellStyle}
     >
       <header className="hud" aria-label="ゲーム情報">
         <section className="hud__score" aria-label={`スコア ${state.score}`}>
           <span className="hud__label">SCORE</span>
           <strong>{state.score.toLocaleString("ja-JP")}</strong>
+        </section>
+        <section
+          className="hud__level"
+          aria-label={`レベル ${levelSetting.level}`}
+        >
+          <span className="hud__label">LEVEL</span>
+          <strong>{levelSetting.level}</strong>
         </section>
         <section
           className="hud__harvest"
@@ -360,6 +404,18 @@ export function RakaseiGame() {
             state.harvestEffect.chain >= 2
               ? "大収穫！"
               : "収穫！"}
+          </div>
+        )}
+
+        {levelUpDisplay !== null && (
+          <div
+            className="level-up-callout"
+            key={levelUpDisplay}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            LEVEL {levelUpDisplay}
           </div>
         )}
 

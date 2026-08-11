@@ -3,6 +3,34 @@ export const UNDERGROUND_ROWS = 6;
 export const COLS = 6;
 export const HARVEST_SCORE_PER_PEANUT = 250;
 
+export const LEVEL_SETTINGS = [
+  { level: 1, minHarvestCount: 0, dropIntervalMs: 900 },
+  { level: 2, minHarvestCount: 10, dropIntervalMs: 800 },
+  { level: 3, minHarvestCount: 25, dropIntervalMs: 700 },
+  { level: 4, minHarvestCount: 45, dropIntervalMs: 600 },
+  { level: 5, minHarvestCount: 70, dropIntervalMs: 500 },
+] as const;
+
+export type LevelSetting = (typeof LEVEL_SETTINGS)[number];
+
+export function getLevelSetting(harvestCount: number): LevelSetting {
+  let setting: LevelSetting = LEVEL_SETTINGS[0];
+  for (const candidate of LEVEL_SETTINGS) {
+    if (harvestCount < candidate.minHarvestCount) break;
+    setting = candidate;
+  }
+  return setting;
+}
+
+export function getLevelUpLevel(
+  previousHarvestCount: number,
+  currentHarvestCount: number,
+): number | null {
+  const previousLevel = getLevelSetting(previousHarvestCount).level;
+  const currentLevel = getLevelSetting(currentHarvestCount).level;
+  return currentLevel > previousLevel ? currentLevel : null;
+}
+
 export const FLOWER_COLORS = ["yellow", "pink", "blue", "purple"] as const;
 export type FlowerColor = (typeof FLOWER_COLORS)[number];
 export type GroundCell = FlowerColor | null;
