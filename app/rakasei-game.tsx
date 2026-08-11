@@ -201,10 +201,13 @@ export function RakaseiGame() {
           <span className="hud__label">SCORE</span>
           <strong>{state.score.toLocaleString("ja-JP")}</strong>
         </section>
-        <div className="mini-logo" aria-hidden="true">
-          <span>らっかせい！</span>
-          <i />
-        </div>
+        <section
+          className="hud__harvest"
+          aria-label={`収穫した落花生 ${state.harvestCount}個`}
+        >
+          <span className="hud__label">収穫</span>
+          <strong><span aria-hidden="true">🥜</span> × {state.harvestCount}</strong>
+        </section>
         <section className="hud__next" aria-label="次の花">
           <span className="hud__label">NEXT</span>
           <div className="next-pair">
@@ -332,13 +335,6 @@ export function RakaseiGame() {
           </div>
         )}
       </section>
-
-      <div
-        className="harvest-count"
-        aria-label={`収穫した落花生 ${state.harvestCount}個`}
-      >
-        <span>収穫</span><strong>🥜 × {state.harvestCount}</strong>
-      </div>
 
       <nav className="controls" aria-label="ゲーム操作">
         <button type="button" className="control-button control-button--arrow" aria-label="左に移動" onClick={() => dispatch({ type: "MOVE", dx: -1 })}>

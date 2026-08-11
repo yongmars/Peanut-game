@@ -21,6 +21,8 @@ test("server-renders the Phase 4 game screen", async () => {
   assert.match(html, /<title>らっかせい！/);
   assert.match(html, /SCORE/);
   assert.match(html, /NEXT/);
+  assert.match(html, /SCORE[\s\S]*収穫[\s\S]*NEXT/);
+  assert.doesNotMatch(html, /mini-logo|harvest-count/);
   assert.match(html, /leaf-border\.webp/);
   assert.match(html, /地上 6列12段/);
   assert.match(html, /地下 6列6段/);
