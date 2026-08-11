@@ -356,7 +356,7 @@ test("the partner flower supplies the column when only it clears", () => {
   assert.equal(result.growthEffect, null);
 });
 
-test("the pivot column wins when both dropped flowers clear", () => {
+test("two flower colors cleared together each create a peanut", () => {
   const groundBoard = createGroundBoard();
   for (let y = 8; y < 11; y += 1) {
     groundBoard[y][2] = "yellow";
@@ -373,8 +373,9 @@ test("the pivot column wins when both dropped flowers clear", () => {
 
   assert.equal(result.chainCount, 1);
   assert.equal(result.score, 800);
-  assert.equal(peanutCount(result.undergroundBoard), 1);
+  assert.equal(peanutCount(result.undergroundBoard), 2);
   assert.deepEqual(result.undergroundBoard[5][2], { type: "standard" });
+  assert.deepEqual(result.undergroundBoard[5][3], { type: "standard" });
 });
 
 test("two chains create three peanuts and harvest the connected group", () => {
@@ -419,8 +420,10 @@ test("three chains create one, two, and three peanuts in their causal columns", 
 
   assert.equal(initial.pendingResolution?.steps.length, 3);
   assert.deepEqual(
-    initial.pendingResolution?.steps.map((step) => step.growthSource?.x),
-    [0, 0, 1],
+    initial.pendingResolution?.steps.map((step) =>
+      step.growthSources.map(({ x }) => x),
+    ),
+    [[0], [0], [1]],
   );
 
   const result = finishResolution(initial);
@@ -454,7 +457,7 @@ test("the reducer displays clear and gravity as separate chain stages", () => {
   assert.equal(state.chainCount, 1);
   assert.equal(state.pendingResolution?.phase, "growth");
   assert.equal(state.growthEffect?.chain, 1);
-  assert.deepEqual(state.growthEffect?.rows, [5]);
+  assert.deepEqual(state.growthEffect?.batches[0].rows, [5]);
   assert.equal(state.groundBoard[7][0], "pink");
   assert.equal(state.groundBoard[11][0], null);
 
@@ -480,8 +483,8 @@ test("the reducer displays clear and gravity as separate chain stages", () => {
   assert.equal(state.score, 1200);
   assert.equal(state.groundBoard.flat().filter(Boolean).length, 0);
   assert.equal(state.pendingResolution?.phase, "growth");
-  assert.equal(state.growthEffect?.column, 0);
-  assert.deepEqual(state.growthEffect?.rows, [4, 3]);
+  assert.equal(state.growthEffect?.batches[0].column, 0);
+  assert.deepEqual(state.growthEffect?.batches[0].rows, [4, 3]);
 });
 
 test("harvest animation removes peanuts, updates totals, and resumes ground resolution", () => {
@@ -506,7 +509,7 @@ test("harvest animation removes peanuts, updates totals, and resumes ground reso
     type: "ADVANCE_RESOLUTION",
     id: state.pendingResolution.id,
   });
-  assert.equal(state.growthEffect?.rows.length, 1);
+  assert.equal(state.growthEffect?.batches[0].rows.length, 1);
   assert.equal(peanutCount(state.undergroundBoard), 3);
 
   state = gameReducer(state, {
@@ -547,10 +550,12 @@ test("the reducer counts consecutive underground harvests", () => {
     growthEffect: {
       id: 1,
       chain: 1,
-      column: 0,
-      rows: [3],
-      sourceX: 0,
-      sourceY: 8,
+      batches: [{
+        column: 0,
+        rows: [3],
+        sourceX: 0,
+        sourceY: 8,
+      }],
     },
     growthSequence: 1,
     pendingResolution: {

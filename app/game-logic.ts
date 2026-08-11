@@ -69,7 +69,7 @@ export type ResolveResult = {
 
 export type ResolutionStep = {
   clearCells: ClearedCell[];
-  growthSource: PairCell | null;
+  growthSources: PairCell[];
   boardAfterClear: GroundBoard;
   boardAfterGravity: GroundBoard;
 };
@@ -81,13 +81,17 @@ export type GrowthTarget = {
   sourceY: number;
 };
 
-export type GrowthEffect = {
-  id: number;
-  chain: number;
+export type GrowthBatch = {
   column: number;
   rows: number[];
   sourceX: number;
   sourceY: number;
+};
+
+export type GrowthEffect = {
+  id: number;
+  chain: number;
+  batches: GrowthBatch[];
 };
 
 export type HarvestCell = { x: number; y: number };
@@ -235,7 +239,7 @@ type TriggerCell = PairCell & { fallDistance?: number };
 
 type TriggeredClear = {
   cells: ClearedCell[];
-  source: PairCell | null;
+  sources: PairCell[];
 };
 
 function findTriggeredClear(
@@ -243,15 +247,17 @@ function findTriggeredClear(
   triggerCells: TriggerCell[],
 ): TriggeredClear {
   const triggerKeys = new Set(triggerCells.map(({ x, y }) => `${x},${y}`));
-  const cells = findClearGroups(board)
-    .filter((group) =>
-      group.some(({ x, y }) => triggerKeys.has(`${x},${y}`)),
-    )
-    .flat();
-  const clearedKeys = new Set(cells.map(({ x, y }) => `${x},${y}`));
-  const source =
-    triggerCells.find(({ x, y }) => clearedKeys.has(`${x},${y}`)) ?? null;
-  return { cells, source };
+  const groups = findClearGroups(board).filter((group) =>
+    group.some(({ x, y }) => triggerKeys.has(`${x},${y}`)),
+  );
+  const sources = groups.flatMap((group) => {
+    const groupKeys = new Set(group.map(({ x, y }) => `${x},${y}`));
+    const source = triggerCells.find(({ x, y }) =>
+      groupKeys.has(`${x},${y}`),
+    );
+    return source ? [source] : [];
+  });
+  return { cells: groups.flat(), sources };
 }
 
 function applyGravity(board: GroundBoard): {
@@ -311,7 +317,7 @@ function resolveFromFirstClear(
     current = gravity.board;
     steps.push({
       clearCells: clear.cells,
-      growthSource: clear.source,
+      growthSources: clear.sources,
       boardAfterClear,
       boardAfterGravity: current.map((row) => [...row]),
     });
@@ -323,7 +329,10 @@ function resolveFromFirstClear(
 
 export function resolveBoard(board: GroundBoard): ResolveResult {
   const cells = findClearGroups(board).flat();
-  return resolveFromFirstClear(board, { cells, source: cells[0] ?? null });
+  return resolveFromFirstClear(board, {
+    cells,
+    sources: cells[0] ? [cells[0]] : [],
+  });
 }
 
 export function resolveAfterLanding(
@@ -695,37 +704,35 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
     if (pending.phase === "clear") {
       const chain = pending.stepIndex + 1;
-      const source = step.growthSource;
-      const rows = source
-        ? findUndergroundSlots(state.undergroundBoard, source.x, chain)
-        : [];
-      const growthSequence = rows.length
+      let undergroundBoard = state.undergroundBoard;
+      const batches = step.growthSources.flatMap((source) => {
+        const rows = findUndergroundSlots(undergroundBoard, source.x, chain);
+        if (rows.length === 0) return [];
+        undergroundBoard = addPeanuts(undergroundBoard, source.x, rows);
+        return [{
+          column: source.x,
+          rows,
+          sourceX: source.x,
+          sourceY: source.y,
+        }];
+      });
+      const growthSequence = batches.length
         ? state.growthSequence + 1
         : state.growthSequence;
       return {
         ...state,
         groundBoard: step.boardAfterClear,
-        undergroundBoard: source
-          ? addPeanuts(state.undergroundBoard, source.x, rows)
-          : state.undergroundBoard,
+        undergroundBoard,
         score: state.score + step.clearCells.length * 100 * chain,
         chainCount: chain,
-        growthEffect:
-          source && rows.length
-            ? {
-                id: growthSequence,
-                chain,
-                column: source.x,
-                rows,
-                sourceX: source.x,
-                sourceY: source.y,
-              }
-            : null,
+        growthEffect: batches.length
+          ? { id: growthSequence, chain, batches }
+          : null,
         growthSequence,
         undergroundChainCount: 0,
         pendingResolution: {
           ...pending,
-          phase: rows.length ? "growth" : "gravity",
+          phase: batches.length ? "growth" : "gravity",
         },
       };
     }

@@ -177,9 +177,12 @@ export function RakaseiGame() {
   useEffect(() => {
     if (!state.growthEffect) return;
     const id = state.growthEffect.id;
+    const longestBatch = Math.max(
+      ...state.growthEffect.batches.map(({ rows }) => rows.length),
+    );
     const timer = window.setTimeout(
       () => dispatch({ type: "FINISH_GROWTH", id }),
-      650 + Math.max(0, state.growthEffect.rows.length - 1) * 140,
+      650 + Math.max(0, longestBatch - 1) * 140,
     );
     return () => window.clearTimeout(timer);
   }, [state.growthEffect]);
@@ -268,6 +271,16 @@ export function RakaseiGame() {
     [state.harvestEffect],
   );
 
+  const appearingPeanutIndices = useMemo(
+    () =>
+      new Map(
+        state.growthEffect?.batches.flatMap(({ column, rows }) =>
+          rows.map((row, index) => [`${column},${row}`, index] as const),
+        ) ?? [],
+      ),
+    [state.growthEffect],
+  );
+
   return (
     <main
       className="game-shell"
@@ -342,9 +355,7 @@ export function RakaseiGame() {
                     <PeanutPiece
                       peanut={peanut}
                       appearingIndex={
-                        state.growthEffect?.column === x
-                          ? state.growthEffect.rows.indexOf(y)
-                          : -1
+                        appearingPeanutIndices.get(`${x},${y}`) ?? -1
                       }
                       harvesting={harvestKeys.has(`${x},${y}`)}
                     />
@@ -369,20 +380,21 @@ export function RakaseiGame() {
           </div>
         )}
 
-        {state.growthEffect && (
+        {state.growthEffect?.batches.map((batch) => (
           <div
             className="growth-guide growth-guide--active"
             style={getGrowthStyle({
-              column: state.growthEffect.column,
-              sourceY: state.growthEffect.sourceY,
-              row: Math.min(...state.growthEffect.rows),
+              column: batch.column,
+              sourceY: batch.sourceY,
+              row: Math.min(...batch.rows),
             })}
             aria-hidden="true"
             data-growth-effect
+            key={`${state.growthEffect.id}-${batch.sourceX}-${batch.sourceY}`}
           >
             <i className="growth-guide__stem" />
           </div>
-        )}
+        ))}
 
         {state.pendingResolution && state.chainCount >= 2 && (
           <div className="chain-callout" key={state.chainCount} aria-live="polite">
