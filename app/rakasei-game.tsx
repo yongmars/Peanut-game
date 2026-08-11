@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useReducer, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   COLS,
   createInitialState,
@@ -14,6 +21,7 @@ import {
   type Peanut,
 } from "./game-logic";
 import { FLOWER_ASSETS, GAME_ASSETS, getPeanutAsset } from "./game-assets";
+import { getTouchGesture } from "./touch-controls";
 
 const FLOWER_LABELS: Record<FlowerColor, string> = {
   yellow: "黄色",
@@ -89,6 +97,41 @@ export function RakaseiGame() {
     undefined,
     () => createInitialState(() => 0),
   );
+  const touchStart = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+
+  const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
+    if (
+      state.gameStatus !== "playing" ||
+      event.pointerType !== "touch" ||
+      !event.isPrimary
+    ) return;
+    touchStart.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleTouchEnd = (event: ReactPointerEvent<HTMLElement>) => {
+    const start = touchStart.current;
+    if (
+      state.gameStatus !== "playing" ||
+      event.pointerType !== "touch" ||
+      !start ||
+      start.pointerId !== event.pointerId
+    ) return;
+    touchStart.current = null;
+
+    const gesture = getTouchGesture(
+      event.clientX - start.x,
+      event.clientY - start.y,
+    );
+    if (gesture === "move-left") dispatch({ type: "MOVE", dx: -1 });
+    if (gesture === "move-right") dispatch({ type: "MOVE", dx: 1 });
+    if (gesture === "hard-drop") dispatch({ type: "HARD_DROP" });
+    if (gesture === "rotate") dispatch({ type: "ROTATE" });
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => dispatch({ type: "TICK" }), 720);
@@ -217,6 +260,15 @@ export function RakaseiGame() {
         </section>
       </header>
 
+      <div
+        className="field-touch-zone"
+        aria-label="タッチ操作エリア。タップで回転、左右スワイプで移動、下スワイプで高速落下"
+        onPointerDown={handleTouchStart}
+        onPointerUp={handleTouchEnd}
+        onPointerCancel={() => {
+          touchStart.current = null;
+        }}
+      >
       <section className="field-wrap" aria-label="ゲームフィールド">
         <div className="field-sky" aria-label="地上 6列12段">
           <div className="ground-grid">
@@ -335,6 +387,7 @@ export function RakaseiGame() {
           </div>
         )}
       </section>
+      </div>
 
       <nav className="controls" aria-label="ゲーム操作">
         <button type="button" className="control-button control-button--arrow" aria-label="左に移動" onClick={() => dispatch({ type: "MOVE", dx: -1 })}>

@@ -134,6 +134,14 @@ button {
   gap: 3px;
 }
 
+.field-touch-zone {
+  display: flex;
+  width: 100%;
+  flex: none;
+  justify-content: center;
+  touch-action: none;
+}
+
 .field-wrap {
   position: relative;
   width: calc(var(--cell-size) * 6);
