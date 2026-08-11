@@ -61,7 +61,7 @@ button {
   background-image: var(--field-background-image);
   background-repeat: no-repeat;
   background-position: center bottom;
-  background-size: auto 145%;
+  background-size: auto 140%;
 }
 
 .hud {
