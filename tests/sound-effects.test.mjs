@@ -38,6 +38,7 @@ class FakeAudio {
 test("all requested sound effects keep their paths, volumes and scopes together", () => {
   assert.deepEqual(SOUND_EFFECTS, {
     flowerLand: { src: "/music/sound effects/flower_land_pofu.wav", volume: 0.75, scope: "gameplay" },
+    rotate: { src: "/music/sound effects/rotate_kuru.wav", volume: 0.7, scope: "gameplay" },
     flowerClear: { src: "/music/sound effects/flower_clear_kiran.wav", volume: 0.65, scope: "gameplay" },
     gynophore: { src: "/music/sound effects/gynophore_nyuu.wav", volume: 0.55, scope: "gameplay" },
     peanutPop: { src: "/music/sound effects/peanut_pop_poko.wav", volume: 0.5, scope: "gameplay", minIntervalMs: 100 },

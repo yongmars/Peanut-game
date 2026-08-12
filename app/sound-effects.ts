@@ -6,6 +6,11 @@ export const SOUND_EFFECTS = {
     volume: 0.75,
     scope: "gameplay",
   },
+  rotate: {
+    src: "/music/sound effects/rotate_kuru.wav",
+    volume: 0.7,
+    scope: "gameplay",
+  },
   flowerClear: {
     src: "/music/sound effects/flower_clear_kiran.wav",
     volume: 0.65,

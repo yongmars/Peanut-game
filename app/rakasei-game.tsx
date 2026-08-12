@@ -321,14 +321,23 @@ export function RakaseiGame() {
   }, [pauseGame, screenState]);
 
   useEffect(() => {
+    const previousPair = previousActivePair.current;
+    const boardChanged = previousGroundBoard.current !== state.groundBoard;
     if (suppressNextLandingSound.current) {
       suppressNextLandingSound.current = false;
     } else if (
       screenState === "playing" &&
-      previousActivePair.current !== null &&
-      previousGroundBoard.current !== state.groundBoard
+      previousPair !== null &&
+      boardChanged
     ) {
       playSound("flowerLand");
+    } else if (
+      screenState === "playing" &&
+      previousPair !== null &&
+      state.activePair !== null &&
+      previousPair.rotation !== state.activePair.rotation
+    ) {
+      playSound("rotate");
     }
     previousActivePair.current = state.activePair;
     previousGroundBoard.current = state.groundBoard;
