@@ -30,6 +30,9 @@ test("harvest totals select the configured level and automatic drop interval", (
     { level: 3, minHarvestCount: 25, dropIntervalMs: 700 },
     { level: 4, minHarvestCount: 45, dropIntervalMs: 600 },
     { level: 5, minHarvestCount: 70, dropIntervalMs: 500 },
+    { level: 6, minHarvestCount: 100, dropIntervalMs: 425 },
+    { level: 7, minHarvestCount: 135, dropIntervalMs: 350 },
+    { level: 8, minHarvestCount: 175, dropIntervalMs: 300 },
   ]);
 
   const expectations = [
@@ -42,7 +45,13 @@ test("harvest totals select the configured level and automatic drop interval", (
     [45, 4, 600],
     [69, 4, 600],
     [70, 5, 500],
-    [999, 5, 500],
+    [99, 5, 500],
+    [100, 6, 425],
+    [134, 6, 425],
+    [135, 7, 350],
+    [174, 7, 350],
+    [175, 8, 300],
+    [999, 8, 300],
   ];
   for (const [harvestCount, level, dropIntervalMs] of expectations) {
     assert.deepEqual(getLevelSetting(harvestCount), {
@@ -56,9 +65,11 @@ test("harvest totals select the configured level and automatic drop interval", (
 test("level-up display reports only an increase and skips crossed levels", () => {
   assert.equal(getLevelUpLevel(9, 10), 2);
   assert.equal(getLevelUpLevel(9, 25), 3);
+  assert.equal(getLevelUpLevel(99, 175), 8);
   assert.equal(getLevelUpLevel(24, 24), null);
   assert.equal(getLevelUpLevel(25, 0), null);
   assert.equal(getLevelUpLevel(70, 75), null);
+  assert.equal(getLevelUpLevel(175, 999), null);
 });
 
 test("all four flower colors are available to pair generation", () => {

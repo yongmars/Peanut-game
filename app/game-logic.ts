@@ -9,6 +9,9 @@ export const LEVEL_SETTINGS = [
   { level: 3, minHarvestCount: 25, dropIntervalMs: 700 },
   { level: 4, minHarvestCount: 45, dropIntervalMs: 600 },
   { level: 5, minHarvestCount: 70, dropIntervalMs: 500 },
+  { level: 6, minHarvestCount: 100, dropIntervalMs: 425 },
+  { level: 7, minHarvestCount: 135, dropIntervalMs: 350 },
+  { level: 8, minHarvestCount: 175, dropIntervalMs: 300 },
 ] as const;
 
 export type LevelSetting = (typeof LEVEL_SETTINGS)[number];
