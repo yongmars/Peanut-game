@@ -19,6 +19,8 @@ test("server-renders the title screen before the game starts", async () => {
   const html = await response.text();
 
   assert.match(html, /<title>らっかせい！/);
+  assert.match(html, /manifest\.webmanifest/);
+  assert.match(html, /apple-touch-icon\.png/);
   assert.match(html, /title\.png/);
   assert.match(html, /花をつなげて、地中でポコッ！/);
   assert.match(html, /BEST SCORE[\s\S]*0/);
