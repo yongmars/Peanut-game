@@ -727,7 +727,7 @@ button {
   box-shadow: 0 3px 0 rgb(142 69 75 / 38%);
   transform: translate(-50%, -50%);
   pointer-events: none;
-  animation: chain-pop 520ms cubic-bezier(.2, 1.35, .4, 1) both;
+  animation: chain-pop 760ms cubic-bezier(.2, 1.35, .4, 1) both;
 }
 
 .harvest-callout {
@@ -828,8 +828,9 @@ button {
 
 @keyframes chain-pop {
   0% { opacity: 0; transform: translate(-50%, -30%) scale(.72); }
-  32% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  22% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  68% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -62%) scale(.96); }
 }
 
 .game-shell--paused .field-wrap * {
