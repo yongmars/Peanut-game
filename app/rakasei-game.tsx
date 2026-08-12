@@ -165,7 +165,7 @@ export function RakaseiGame() {
   const [levelUpDisplay, setLevelUpDisplay] = useState<number | null>(null);
   const [screenState, setScreenState] = useState<ScreenState>("title");
   const [musicEnabled, setMusicEnabled] = useState(true);
-  const [currentTrack, setCurrentTrack] = useState<BgmTrack>("normal");
+  const [currentTrack, setCurrentTrack] = useState<BgmTrack>("farm");
   const [tutorialSeen, setTutorialSeen] = useState(false);
   const [tutorialReturn, setTutorialReturn] = useState<TutorialReturn>("title");
   const [pauseConfirmation, setPauseConfirmation] = useState<PauseConfirmation>(null);
@@ -292,7 +292,7 @@ export function RakaseiGame() {
         harvest: update.harvestUpdated,
       });
       stopMusic();
-      setCurrentTrack("normal");
+      setCurrentTrack("farm");
       setScreenState("gameOver");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -537,11 +537,11 @@ export function RakaseiGame() {
 
   const startNewGame = () => {
     clearMusicFade();
-    setCurrentTrack("normal");
+    setCurrentTrack("farm");
     const audio = musicPlayer.current;
     if (audio) {
       audio.pause();
-      audio.src = BGM_ASSETS.normal;
+      audio.src = BGM_ASSETS.farm;
       audio.currentTime = 0;
       audio.volume = 0;
       audio.load();
@@ -557,7 +557,7 @@ export function RakaseiGame() {
 
   const returnToTitle = () => {
     stopMusic();
-    setCurrentTrack("normal");
+    setCurrentTrack("farm");
     setPauseConfirmation(null);
     setScreenState("title");
   };

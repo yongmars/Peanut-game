@@ -25,7 +25,7 @@ test("server-renders the title screen before the game starts", async () => {
   assert.match(html, /BEST HARVEST[\s\S]*0/);
   assert.match(html, /あそぶ/);
   assert.match(html, /peanutboy\.png/);
-  assert.match(html, /peanutgame_music\.mp3/);
+  assert.match(html, /rakkasei_bgm_farmcute\.mp3/);
   assert.match(html, /BGM[\s\S]*ON/);
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /あそびかた/);
