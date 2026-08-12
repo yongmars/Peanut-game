@@ -45,6 +45,12 @@ import {
   usePausableInterval,
   usePausableTimeout,
 } from "./use-pausable-timer";
+import {
+  createSoundEffectPlayer,
+  getChainSoundEffect,
+  type SoundEffectName,
+  type SoundEffectPlayer,
+} from "./sound-effects";
 
 const LEVEL_UP_DISPLAY_MS = 1_200;
 
@@ -101,11 +107,13 @@ function PeanutPiece({
   preview = false,
   appearingIndex = -1,
   harvesting = false,
+  onAppear,
 }: {
   peanut: Peanut;
   preview?: boolean;
   appearingIndex?: number;
   harvesting?: boolean;
+  onAppear?: () => void;
 }) {
   const appearing = appearingIndex >= 0;
   return (
@@ -120,6 +128,7 @@ function PeanutPiece({
       alt={preview ? "生成予定の落花生" : harvesting ? "収穫される笑顔の落花生" : "落花生"}
       draggable={false}
       data-peanut={preview ? "preview" : "grown"}
+      onAnimationStart={appearing ? onAppear : undefined}
     />
   );
 }
@@ -162,6 +171,14 @@ export function RakaseiGame() {
   const previousHarvestCount = useRef(state.harvestCount);
   const musicPlayer = useRef<HTMLAudioElement | null>(null);
   const musicFadeTimer = useRef<number | null>(null);
+  const soundEffectPlayer = useRef<SoundEffectPlayer | null>(null);
+  const previousGroundBoard = useRef(state.groundBoard);
+  const previousActivePair = useRef(state.activePair);
+  const suppressNextLandingSound = useRef(true);
+  const playedChainSoundKey = useRef<string | null>(null);
+  const playedGrowthSoundId = useRef<number | null>(null);
+  const playedHarvestSoundId = useRef<number | null>(null);
+  const playedLevelUpSound = useRef<number | null>(null);
   const [levelUpDisplay, setLevelUpDisplay] = useState<number | null>(null);
   const [screenState, setScreenState] = useState<ScreenState>("title");
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -178,6 +195,27 @@ export function RakaseiGame() {
     harvest: false,
   });
   const levelSetting = getLevelSetting(state.harvestCount);
+
+  const playSound = useCallback((name: SoundEffectName) => {
+    soundEffectPlayer.current?.playSound(name);
+  }, []);
+
+  const resetSoundEventTracking = useCallback(() => {
+    suppressNextLandingSound.current = true;
+    playedChainSoundKey.current = null;
+    playedGrowthSoundId.current = null;
+    playedHarvestSoundId.current = null;
+    playedLevelUpSound.current = null;
+  }, []);
+
+  useEffect(() => {
+    const player = createSoundEffectPlayer();
+    soundEffectPlayer.current = player;
+    return () => {
+      player.dispose();
+      if (soundEffectPlayer.current === player) soundEffectPlayer.current = null;
+    };
+  }, []);
 
   const clearMusicFade = useCallback(() => {
     if (musicFadeTimer.current === null) return;
@@ -199,13 +237,21 @@ export function RakaseiGame() {
     touchStart.current = null;
     clearMusicFade();
     musicPlayer.current?.pause();
+    soundEffectPlayer.current?.stopGameplaySounds();
     setPauseConfirmation(null);
     setScreenState("paused");
   }, [clearMusicFade, screenState, state.gameStatus]);
 
   const resumeGame = () => {
+    playSound("pauseClick");
     setPauseConfirmation(null);
     setScreenState("playing");
+  };
+
+  const pauseGameFromButton = () => {
+    if (screenState !== "playing" || state.gameStatus !== "playing") return;
+    pauseGame();
+    playSound("pauseClick");
   };
 
   const handleTouchStart = (event: ReactPointerEvent<HTMLElement>) => {
@@ -275,6 +321,58 @@ export function RakaseiGame() {
   }, [pauseGame, screenState]);
 
   useEffect(() => {
+    if (suppressNextLandingSound.current) {
+      suppressNextLandingSound.current = false;
+    } else if (
+      screenState === "playing" &&
+      previousActivePair.current !== null &&
+      previousGroundBoard.current !== state.groundBoard
+    ) {
+      playSound("flowerLand");
+    }
+    previousActivePair.current = state.activePair;
+    previousGroundBoard.current = state.groundBoard;
+  }, [playSound, screenState, state.activePair, state.groundBoard]);
+
+  useEffect(() => {
+    const pending = state.pendingResolution;
+    const isCompletedClearStage =
+      pending !== null &&
+      pending.phase !== "clear" &&
+      state.chainCount > 0 &&
+      state.chainCount === pending.stepIndex + 1;
+    if (!isCompletedClearStage || screenState !== "playing") return;
+
+    const soundKey = `${pending.id}:${state.chainCount}`;
+    if (playedChainSoundKey.current === soundKey) return;
+    playedChainSoundKey.current = soundKey;
+    playSound("flowerClear");
+    playSound(getChainSoundEffect(state.chainCount));
+  }, [playSound, screenState, state.chainCount, state.pendingResolution]);
+
+  useEffect(() => {
+    const effect = state.growthEffect;
+    if (
+      screenState !== "playing" ||
+      !effect ||
+      playedGrowthSoundId.current === effect.id
+    ) return;
+    playedGrowthSoundId.current = effect.id;
+    playSound("gynophore");
+  }, [playSound, screenState, state.growthEffect]);
+
+  useEffect(() => {
+    const effect = state.harvestEffect;
+    if (
+      screenState !== "playing" ||
+      !effect ||
+      playedHarvestSoundId.current === effect.id
+    ) return;
+    playedHarvestSoundId.current = effect.id;
+    playSound("harvest");
+  }, [playSound, screenState, state.harvestEffect]);
+
+  useEffect(() => {
     if (screenState !== "playing" || state.gameStatus !== "gameover") return;
     const timer = window.setTimeout(() => {
       const update = getBestRecordUpdate(bestRecords, {
@@ -292,6 +390,7 @@ export function RakaseiGame() {
         harvest: update.harvestUpdated,
       });
       stopMusic();
+      playSound("gameOver");
       setCurrentTrack("farm");
       setScreenState("gameOver");
     }, 0);
@@ -302,6 +401,7 @@ export function RakaseiGame() {
     state.gameStatus,
     state.harvestCount,
     state.score,
+    playSound,
     stopMusic,
   ]);
 
@@ -395,6 +495,16 @@ export function RakaseiGame() {
       window.clearTimeout(showTimer);
     };
   }, [state.harvestCount]);
+
+  useEffect(() => {
+    if (
+      screenState !== "playing" ||
+      levelUpDisplay === null ||
+      playedLevelUpSound.current === levelUpDisplay
+    ) return;
+    playedLevelUpSound.current = levelUpDisplay;
+    playSound("levelUp");
+  }, [levelUpDisplay, playSound, screenState]);
 
   usePausableTimeout(
     () => setLevelUpDisplay(null),
@@ -518,6 +628,10 @@ export function RakaseiGame() {
     [state.growthEffect],
   );
 
+  const handlePeanutAppear = useCallback(() => {
+    if (screenState === "playing") playSound("peanutPop");
+  }, [playSound, screenState]);
+
   const toggleMusic = () => {
     const nextEnabled = !musicEnabled;
     setMusicEnabled(nextEnabled);
@@ -536,6 +650,8 @@ export function RakaseiGame() {
   };
 
   const startNewGame = () => {
+    soundEffectPlayer.current?.stopAllSounds();
+    resetSoundEventTracking();
     clearMusicFade();
     setCurrentTrack("farm");
     const audio = musicPlayer.current;
@@ -556,6 +672,7 @@ export function RakaseiGame() {
   };
 
   const returnToTitle = () => {
+    soundEffectPlayer.current?.stopAllSounds();
     stopMusic();
     setCurrentTrack("farm");
     setPauseConfirmation(null);
@@ -769,7 +886,7 @@ export function RakaseiGame() {
             type="button"
             className="pause-button"
             aria-label="一時停止"
-            onClick={pauseGame}
+            onClick={pauseGameFromButton}
             disabled={screenState !== "playing" || state.gameStatus !== "playing"}
           >
             <span aria-hidden="true">⏸</span>
@@ -818,6 +935,7 @@ export function RakaseiGame() {
                         appearingPeanutIndices.get(`${x},${y}`) ?? -1
                       }
                       harvesting={harvestKeys.has(`${x},${y}`)}
+                      onAppear={handlePeanutAppear}
                     />
                   )}
                 </div>
