@@ -12,7 +12,8 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const isVercelBuild =
-  process.env.VERCEL === "1" || process.env.NITRO_PRESET === "vercel";
+  process.env.VERCEL === "1" ||
+  process.env.NITRO_PRESET === "vercel";
 
 const localBindingConfig = {
   main: "./worker/index.ts",

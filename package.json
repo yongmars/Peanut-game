@@ -8,9 +8,9 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build && node build/generate-pwa.mjs",
-    "build:vercel": "vite build && node build/generate-pwa.mjs",
+    "build:vercel": "node build/vercel-build.mjs",
     "start": "vinext start",
-    "test": "npm run build && node --test tests/*.test.mjs",
+    "test": "npm run build && npm run build:vercel && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .output --ignore-pattern .vercel --ignore-pattern work",
     "db:generate": "drizzle-kit generate"
   },

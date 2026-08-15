@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { generateSW } from "workbox-build";
 
 const isVercelBuild =
-  process.env.VERCEL === "1" || process.env.NITRO_PRESET === "vercel";
+  process.env.VERCEL === "1" ||
+  process.env.NITRO_PRESET === "vercel";
 const candidates = isVercelBuild
   ? [".output/public", ".vercel/output/static"]
   : ["dist/client"];
@@ -19,6 +20,7 @@ const result = await generateSW({
   globPatterns: [
     "_next/static/**/*.{js,css,woff,woff2}",
     "*.{png,webp,webmanifest}",
+    "register-sw.js",
     "music/rakkasei_bgm*.mp3",
     "music/sound effects/*.wav",
   ],

@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
-import { PwaRegistration } from "./pwa-registration";
 import "./globals.css";
 
 const title = "らっかせい！";
@@ -66,11 +65,9 @@ export default function RootLayout({
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <script src="/register-sw.js" defer />
       </head>
-      <body>
-        {children}
-        <PwaRegistration />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

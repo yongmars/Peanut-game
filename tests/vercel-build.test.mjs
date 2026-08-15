@@ -19,6 +19,7 @@ test("Nitro emits a complete Vercel Build Output API package", async () => {
     access(".vercel/output/functions/__server.func/index.mjs"),
     access(".vercel/output/static/sw.js"),
     access(".vercel/output/static/sw-install.js"),
+    access(".vercel/output/static/register-sw.js"),
     access(".vercel/output/static/manifest.webmanifest"),
     access(".vercel/output/static/pwa-192.png"),
     access(".vercel/output/static/pwa-512.png"),

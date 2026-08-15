@@ -54,18 +54,20 @@ test("PWA and social images have their declared dimensions", async () => {
 
 test("production build emits a service worker with game images and audio", async () => {
   const serviceWorker = await readFile("dist/client/sw.js", "utf8");
-  const registration = await readFile("app/pwa-registration.tsx", "utf8");
+  const registration = await readFile("public/register-sw.js", "utf8");
 
   assert.match(serviceWorker, /manifest\.webmanifest/);
   assert.match(serviceWorker, /pwa-512\.png/);
   assert.match(serviceWorker, /background\.png/);
   assert.match(serviceWorker, /rakkasei_bgm_farmcute\.mp3/);
   assert.match(serviceWorker, /rotate_kuru\.wav/);
+  assert.match(serviceWorker, /register-sw\.js/);
   assert.match(serviceWorker, /sw-install\.js/);
   assert.match(serviceWorker, /SKIP_WAITING/);
   const installWorker = await readFile("public/sw-install.js", "utf8");
   assert.match(installWorker, /addEventListener\("install"/);
   assert.match(installWorker, /caches\.open\("rakkasei-pages"\)/);
   assert.match(installWorker, /cache\.put\("\/"/);
+  assert.match(registration, /\.register\("\/sw\.js"/);
   assert.doesNotMatch(registration, /postMessage|location\.reload/);
 });
