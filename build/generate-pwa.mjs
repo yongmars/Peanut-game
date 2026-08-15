@@ -26,6 +26,7 @@ const result = await generateSW({
   maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
   cleanupOutdatedCaches: true,
   clientsClaim: true,
+  importScripts: ["sw-install.js"],
   inlineWorkboxRuntime: true,
   skipWaiting: false,
   sourcemap: false,

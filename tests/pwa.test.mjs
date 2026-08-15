@@ -61,6 +61,11 @@ test("production build emits a service worker with game images and audio", async
   assert.match(serviceWorker, /background\.png/);
   assert.match(serviceWorker, /rakkasei_bgm_farmcute\.mp3/);
   assert.match(serviceWorker, /rotate_kuru\.wav/);
+  assert.match(serviceWorker, /sw-install\.js/);
   assert.match(serviceWorker, /SKIP_WAITING/);
+  const installWorker = await readFile("public/sw-install.js", "utf8");
+  assert.match(installWorker, /addEventListener\("install"/);
+  assert.match(installWorker, /caches\.open\("rakkasei-pages"\)/);
+  assert.match(installWorker, /cache\.put\("\/"/);
   assert.doesNotMatch(registration, /postMessage|location\.reload/);
 });
