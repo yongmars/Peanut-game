@@ -17,9 +17,13 @@ test("server-renders the title screen before the game starts", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
+  const headEnd = html.indexOf("</head>");
+  const manifestLinks = html.match(/<link[^>]+rel="manifest"[^>]*>/g) ?? [];
 
   assert.match(html, /<title>らっかせい！/);
-  assert.match(html, /manifest\.webmanifest/);
+  assert.equal(manifestLinks.length, 1);
+  assert.match(manifestLinks[0], /href="\/manifest\.webmanifest"/);
+  assert.ok(headEnd > html.indexOf(manifestLinks[0]), "manifest link must be inside head");
   assert.match(html, /apple-touch-icon\.png/);
   assert.match(html, /name="mobile-web-app-capable" content="yes"/);
   assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);

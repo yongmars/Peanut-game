@@ -16,7 +16,6 @@ export async function generateMetadata(): Promise<Metadata> {
     title,
     description,
     applicationName: title,
-    manifest: "/manifest.webmanifest",
     formatDetection: {
       telephone: false,
     },
@@ -65,6 +64,7 @@ export default function RootLayout({
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <script src="/register-sw.js" defer />
       </head>
       <body>{children}</body>
